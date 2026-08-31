@@ -1,0 +1,6 @@
+{
+  "name": "Greenfield Academy Dashboard",
+  "description": "A modern and professional school management dashboard featuring student management, admin credentials, and institutional metrics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
