@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Header } from './components/Header';
+import React, { useState, useEffect } from 'react';
+import { DashboardLayout } from './components/DashboardLayout';
+import { LoginModal, UserSession } from './components/LoginModal';
 import { WelcomeCard } from './components/WelcomeCard';
 import { InfoGrid } from './components/InfoGrid';
-import { NavigationTabs } from './components/NavigationTabs';
 import { EnrollmentTrendsSection } from './components/EnrollmentTrendsSection';
 import { StudentsView } from './components/StudentsView';
 import { StudentModal } from './components/StudentModal';
@@ -13,6 +13,10 @@ import { AttendanceView } from './components/AttendanceView';
 import { AssessmentGrid } from './components/AssessmentGrid';
 import { FeePaymentsView } from './components/FeePaymentsView';
 import { ReportsView } from './components/ReportsView';
+import { AuditsView } from './components/AuditsView';
+import { ParentStudentLinkingView } from './components/ParentStudentLinkingView';
+import { ParentDashboardView } from './components/ParentDashboardView';
+import { StudentAssignmentsView } from './components/StudentAssignmentsView';
 
 import {
   initialAdminProfile,
@@ -20,20 +24,42 @@ import {
   initialTeachers,
   initialClasses,
 } from './data/mockData';
-import { TabType, Student } from './types';
-import { CheckCircle2, Info, BellRing } from 'lucide-react';
+import { Student } from './types';
+import { CheckCircle2, ShieldAlert } from 'lucide-react';
 
 export default function App() {
-  const [profile, setProfile] = useState(initialAdminProfile);
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [teachers] = useState(initialTeachers);
   const [classes] = useState(initialClasses);
-  const [activeTab, setActiveTab] = useState<TabType>('students');
+  const [activeTab, setActiveTab] = useState<string>('overview');
+
+  // Multi-Role Authenticated Session State (Day 2 JWT Integration)
+  const [session, setSession] = useState<UserSession>(() => {
+    const saved = localStorage.getItem('ga_user_session');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return {
+      id: 'usr-admin-01',
+      school_id: 'SCH-KEN-2026-001',
+      email: 'admin@greenfield.edu',
+      name: 'Arthur Pendelton',
+      role: 'admin',
+      profile_id: 'usr-admin-01',
+    };
+  });
+
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   // Modal States
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [studentModalDefaultTab, setStudentModalDefaultTab] = useState<'profile' | 'assignments'>('profile');
 
   // Toast Notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -45,11 +71,37 @@ export default function App() {
     }, 3500);
   };
 
+  // Adjust default tab when session role changes
+  useEffect(() => {
+    if (session.role === 'teacher') {
+      setActiveTab('classes');
+    } else if (session.role === 'parent') {
+      setActiveTab('parent_dashboard');
+    } else if (session.role === 'student') {
+      setActiveTab('assignments');
+    } else {
+      setActiveTab('overview');
+    }
+  }, [session.role]);
+
   const handleLogout = () => {
-    showToast('Session logged out safely. Reloading administrative state...');
-    setTimeout(() => {
-      setProfile({ ...initialAdminProfile });
-    }, 500);
+    localStorage.removeItem('ga_auth_token');
+    localStorage.removeItem('ga_user_session');
+    const guestAdmin: UserSession = {
+      id: 'usr-admin-01',
+      school_id: 'SCH-KEN-2026-001',
+      email: 'admin@greenfield.edu',
+      name: 'Arthur Pendelton (Admin)',
+      role: 'admin',
+      profile_id: 'usr-admin-01',
+    };
+    setSession(guestAdmin);
+    showToast('Session tokens cleared. Logged out successfully.');
+  };
+
+  const handleLoginSuccess = (newSession: UserSession) => {
+    setSession(newSession);
+    showToast(`Welcome back, ${newSession.name} (${newSession.role.toUpperCase()})!`);
   };
 
   const handleSaveStudent = (studentData: Omit<Student, 'id'> | Student) => {
@@ -77,80 +129,181 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
-      {/* 1. Header with Brand, Date & Logout */}
-      <Header profile={profile} onLogout={handleLogout} />
+    <DashboardLayout
+      session={session}
+      activeNavId={activeTab}
+      onSelectNav={(tabId) => setActiveTab(tabId)}
+      onLogout={handleLogout}
+      onOpenLoginModal={() => setIsLoginModalOpen(true)}
+    >
+      {/* 1. District / School Overview View */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          <WelcomeCard
+            profile={{
+              ...initialAdminProfile,
+              name: session.name,
+              role: session.role === 'admin' ? 'District Administrator' : session.role,
+              email: session.email,
+            }}
+            onAddStudentClick={() => {
+              setEditingStudent(null);
+              setIsAddModalOpen(true);
+            }}
+            onExportReportClick={() => {
+              setActiveTab('reports');
+              showToast('Navigated to Academic Reports dossier.');
+            }}
+          />
 
-      {/* 2. Sub-Navigation Bar matching High Density Theme */}
-      <NavigationTabs
-        activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab)}
-        studentsCount={students.length}
-        teachersCount={teachers.length}
-        classesCount={classes.length}
-      />
+          <InfoGrid
+            profile={{
+              ...initialAdminProfile,
+              name: session.name,
+              role: session.role.toUpperCase(),
+              email: session.email,
+            }}
+          />
 
-      {/* Main Content Layout Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 space-y-6 sm:space-y-8">
-        {/* 3. Welcome Card */}
-        <WelcomeCard
-          profile={profile}
-          onAddStudentClick={() => {
-            setEditingStudent(null);
-            setIsAddModalOpen(true);
-          }}
-          onExportReportClick={() => {
-            setActiveTab('reports');
-            showToast('Navigated to Academic Reports dossier.');
+          <EnrollmentTrendsSection />
+        </div>
+      )}
+
+      {/* 2. Parent Dashboard View (Day 5 MVP) - Accessible only when session role is 'parent' */}
+      {activeTab === 'parent_dashboard' && (
+        <ParentDashboardView
+          session={session}
+          onNavigateTab={(tab) => {
+            setActiveTab(tab);
           }}
         />
+      )}
 
-        {/* 4. Administrator & Institution Credentials Info Grid */}
-        <InfoGrid profile={profile} />
+      {/* 2. Parent-Student Linking & Guardian Registry (Day 5 MVP) */}
+      {activeTab === 'parents' && (
+        <div className="space-y-4">
+          <ParentStudentLinkingView />
+        </div>
+      )}
 
-        {/* 5. High Density Analytics & Recent Requests */}
-        <EnrollmentTrendsSection />
-
-        {/* 6. Active Tab Content Section */}
-        <section aria-labelledby="active-module-heading" className="space-y-4">
+      {/* 3. Students Registry / Linked Children View */}
+      {activeTab === 'students' && (
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 id="active-module-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Active Management Module • <span className="text-indigo-600 capitalize">{activeTab}</span>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              {session.role === 'parent' ? 'Registered Dependent Children' : 'Student Registry & Roster'}
             </h3>
           </div>
+          <StudentsView
+            students={
+              session.role === 'parent'
+                ? students.filter((s) => s.id === 's-1' || s.id === 's-2')
+                : students
+            }
+            onAddStudent={() => {
+              setEditingStudent(null);
+              setIsAddModalOpen(true);
+            }}
+            onViewStudent={(student) => {
+              setViewingStudent(student);
+              setStudentModalDefaultTab('profile');
+            }}
+            onOpenAssignments={(student) => {
+              setViewingStudent(student);
+              setStudentModalDefaultTab('assignments');
+            }}
+            onEditStudent={(student) => {
+              setEditingStudent(student);
+              setIsAddModalOpen(true);
+            }}
+            onDeleteStudent={handleDeleteStudent}
+          />
+        </div>
+      )}
 
-          <div>
-            {activeTab === 'students' && (
-              <StudentsView
-                students={students}
-                onAddStudent={() => {
-                  setEditingStudent(null);
-                  setIsAddModalOpen(true);
-                }}
-                onViewStudent={(student) => setViewingStudent(student)}
-                onEditStudent={(student) => {
-                  setEditingStudent(student);
-                  setIsAddModalOpen(true);
-                }}
-                onDeleteStudent={handleDeleteStudent}
-              />
-            )}
+      {/* 3. Teachers / Faculty Directory View */}
+      {activeTab === 'teachers' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Faculty Directory & Departmental Leads
+          </h3>
+          <TeachersView teachers={teachers} />
+        </div>
+      )}
 
-            {activeTab === 'teachers' && <TeachersView teachers={teachers} />}
-            {activeTab === 'classes' && <ClassesView classes={classes} />}
-            {activeTab === 'attendance' && <AttendanceView />}
-            {activeTab === 'grading' && <AssessmentGrid />}
-            {activeTab === 'finance' && <FeePaymentsView />}
-            {activeTab === 'reports' && <ReportsView />}
-          </div>
-        </section>
-      </main>
+      {/* 4. Manage Classes / Timetable View */}
+      {activeTab === 'classes' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            {session.role === 'student' ? 'Course Schedule & Classrooms' : 'Academic Class Roster & Schedules'}
+          </h3>
+          <ClassesView classes={classes} />
+        </div>
+      )}
+
+      {/* 5. Attendance & Truancy View */}
+      {activeTab === 'attendance' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Attendance Register & Truancy Audit
+          </h3>
+          <AttendanceView />
+        </div>
+      )}
+
+      {/* 6. Competency & Strands Grading View */}
+      {activeTab === 'grading' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Continuous Assessments & CBC Strand Rubrics
+          </h3>
+          <AssessmentGrid />
+        </div>
+      )}
+
+      {/* 7. Fee Clearance & M-Pesa Payments View */}
+      {activeTab === 'finance' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Safaricom M-Pesa Fee Settlement & Clearance Ledger
+          </h3>
+          <FeePaymentsView />
+        </div>
+      )}
+
+      {/* 8. Summative Report Cards & Broadsheet Dossier */}
+      {activeTab === 'reports' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Official Summative Transcripts & CBC Broadsheets
+          </h3>
+          <ReportsView />
+        </div>
+      )}
+
+      {/* 9. Immutable System Security & Audits View */}
+      {activeTab === 'audits' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            District Security Audits & Access Logs
+          </h3>
+          <AuditsView />
+        </div>
+      )}
+
+      {/* 10. Student Assignments & Submission Portal (Day 5 MVP) */}
+      {activeTab === 'assignments' && (
+        <div className="space-y-4">
+          <StudentAssignmentsView session={session} />
+        </div>
+      )}
 
       {/* Modals & Overlays */}
       <StudentModal
         student={viewingStudent}
         isOpen={!!viewingStudent}
         onClose={() => setViewingStudent(null)}
+        defaultTab={studentModalDefaultTab}
       />
 
       <AddStudentModal
@@ -163,6 +316,12 @@ export default function App() {
         initialData={editingStudent}
       />
 
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+
       {/* Toast Notification Container */}
       {toastMessage && (
         <div
@@ -173,24 +332,6 @@ export default function App() {
           <span>{toastMessage}</span>
         </div>
       )}
-
-      {/* Modern High-Density Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 px-4 sm:px-8 mt-12 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center text-white text-[10px] font-bold">
-              G
-            </div>
-            <span className="font-semibold text-slate-800">Greenfield Academy Central District</span>
-            <span className="text-slate-400">• Institutional Management Console</span>
-          </div>
-          <div className="flex items-center gap-6 text-slate-400">
-            <span>District 042-C</span>
-            <span>Security Tier 1</span>
-            <span>GA-2024-001</span>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </DashboardLayout>
   );
 }

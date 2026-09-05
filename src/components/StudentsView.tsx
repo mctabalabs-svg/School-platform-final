@@ -13,7 +13,8 @@ import {
   Sparkles,
   ArrowUpDown,
   LayoutGrid,
-  List
+  List,
+  UploadCloud,
 } from 'lucide-react';
 import { Student } from '../types';
 
@@ -23,6 +24,7 @@ interface StudentsViewProps {
   onViewStudent: (student: Student) => void;
   onEditStudent: (student: Student) => void;
   onDeleteStudent: (id: string) => void;
+  onOpenAssignments?: (student: Student) => void;
 }
 
 export const StudentsView: React.FC<StudentsViewProps> = ({
@@ -31,6 +33,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   onViewStudent,
   onEditStudent,
   onDeleteStudent,
+  onOpenAssignments,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [gradeFilter, setGradeFilter] = useState('All');
@@ -320,6 +323,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
+                          onClick={() => (onOpenAssignments ? onOpenAssignments(student) : onViewStudent(student))}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                          title="Submit / View Assignments"
+                        >
+                          <UploadCloud className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => onViewStudent(student)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
                           title="View Profile"
@@ -428,6 +439,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   View Record
                 </button>
                 <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => (onOpenAssignments ? onOpenAssignments(student) : onViewStudent(student))}
+                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-md cursor-pointer"
+                    title="Submit / View Assignments"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => onEditStudent(student)}

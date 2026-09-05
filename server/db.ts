@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import knex from 'knex';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 
 // Knex Query Builder instance with PostgreSQL dialect
@@ -199,10 +200,74 @@ export async function initDatabase(): Promise<void> {
     );
   `);
 
-  // 12. Parent & Student Relationship Mapping Table
+  // 12. Users Table (Unified Authentication & RBAC)
+  await pglite.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id VARCHAR(64) PRIMARY KEY,
+      school_id VARCHAR(64) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      first_name VARCHAR(128) NOT NULL,
+      last_name VARCHAR(128) NOT NULL,
+      role VARCHAR(64) NOT NULL CHECK (role IN ('admin', 'super_admin', 'principal', 'teacher', 'parent', 'student', 'accountant')),
+      status VARCHAR(32) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'pending', 'inactive')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 13. Teachers Profile Table
+  await pglite.query(`
+    CREATE TABLE IF NOT EXISTS teachers (
+      id VARCHAR(64) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      staff_id VARCHAR(64) UNIQUE NOT NULL,
+      specialization VARCHAR(255),
+      department VARCHAR(128),
+      phone VARCHAR(64),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 14. Parents Profile Table
+  await pglite.query(`
+    CREATE TABLE IF NOT EXISTS parents (
+      id VARCHAR(64) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      national_id VARCHAR(64),
+      occupation VARCHAR(128),
+      phone VARCHAR(64),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Ensure user_id column exists on students
+  try {
+    await pglite.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);`);
+  } catch (e) {
+    // Ignore if column exists
+  }
+
+  // 15. Teacher Subject & Class Assignments Table (for ownership & marking authorizations)
+  await pglite.query(`
+    CREATE TABLE IF NOT EXISTS teacher_assignments (
+      id VARCHAR(64) PRIMARY KEY,
+      teacher_id VARCHAR(64) NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+      class_id VARCHAR(64) NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      subject_id VARCHAR(64) NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+      academic_year VARCHAR(64) DEFAULT '2025-2026',
+      term_id VARCHAR(64) DEFAULT 'term-fall-2025',
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT unique_teacher_class_subject UNIQUE (teacher_id, class_id, subject_id, term_id)
+    );
+  `);
+
+  // 16. Parent & Student Relationship Mapping Table
   await pglite.query(`
     CREATE TABLE IF NOT EXISTS parent_students (
       id VARCHAR(64) PRIMARY KEY,
+      parent_id VARCHAR(64),
       parent_user_id VARCHAR(64) NOT NULL,
       parent_name VARCHAR(255) NOT NULL,
       parent_email VARCHAR(255) NOT NULL,
@@ -211,6 +276,34 @@ export async function initDatabase(): Promise<void> {
       relationship VARCHAR(64) DEFAULT 'Parent/Guardian'
     );
   `);
+
+  // 17. Assignment Submissions Table
+  await pglite.query(`
+    CREATE TABLE IF NOT EXISTS assignment_submissions (
+      id VARCHAR(64) PRIMARY KEY,
+      assessment_id VARCHAR(64) NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+      student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      submission_text TEXT,
+      file_name VARCHAR(255),
+      file_size VARCHAR(64),
+      file_url TEXT,
+      attachment_type VARCHAR(64),
+      external_link TEXT,
+      comments TEXT,
+      status VARCHAR(32) DEFAULT 'submitted',
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT unique_student_submission UNIQUE (assessment_id, student_id)
+    );
+  `);
+
+  // Ensure due_date and instructions columns exist on assessments
+  try {
+    await pglite.query(`ALTER TABLE assessments ADD COLUMN IF NOT EXISTS due_date VARCHAR(64);`);
+    await pglite.query(`ALTER TABLE assessments ADD COLUMN IF NOT EXISTS instructions TEXT;`);
+  } catch (e) {
+    // Ignore if column exists
+  }
 
   // Migration helper for audit_logs if subject_id column didn't exist in early migration
   try {
@@ -225,8 +318,9 @@ export async function initDatabase(): Promise<void> {
   // Ensure subjects and assessments seed rows exist even if terms was already seeded in previous runs
   await seedSubjectsAndAssessments();
 
-  // Ensure fee accounts and parents exist
+  // Ensure fee accounts, parents, users, and teacher assignments exist
   await seedFeeAccountsAndParents();
+  await seedUsersAndProfiles();
 }
 
 async function seedFeeAccountsAndParents() {
@@ -302,14 +396,80 @@ async function seedSubjectsAndAssessments() {
       ('sub-kis', 'KIS-101', 'Kiswahili na Mawasiliano', 'Languages', 'both')
       ON CONFLICT (code) DO NOTHING;
     `);
+  }
 
+  const asmRes = await pglite.query<{ count: string }>('SELECT COUNT(*) as count FROM assessments');
+  if (Number(asmRes.rows[0]?.count || 0) === 0) {
     await pglite.query(`
-      INSERT INTO assessments (id, title, class_id, subject_id, term_id, assessment_type, evaluation_system, max_score, weightage, strand_name, sub_strand) VALUES
-      ('asm-1', 'Mechanics & Dynamics CAT 1', 'c-1', 'sub-phy', 'term-fall-2025', 'CAT_1', 'numeric', 100.00, 20.00, 'Classical Mechanics', 'Newtonian Laws'),
-      ('asm-2', 'Kinematics & Vectors Practical', 'c-1', 'sub-phy', 'term-fall-2025', 'STRAND_EVALUATION', 'cbc', 100.00, 30.00, 'Physical Sciences & Experimentation', 'Measurement & Precision Lab'),
-      ('asm-3', 'Algorithm Design & Trees Assessment', 'c-2', 'sub-cs', 'term-fall-2025', 'CAT_1', 'numeric', 100.00, 25.00, 'Computing & Logic', 'Graph Theory & Data Structures'),
-      ('asm-4', 'Computational Problem Solving Task', 'c-2', 'sub-cs', 'term-fall-2025', 'STRAND_EVALUATION', 'cbc', 100.00, 35.00, 'Digital Literacy & Innovation', 'Software System Design')
+      INSERT INTO assessments (id, title, class_id, subject_id, term_id, assessment_type, evaluation_system, max_score, weightage, strand_name, sub_strand, due_date, instructions) VALUES
+      ('asm-1', 'Mechanics & Dynamics CAT 1', 'c-1', 'sub-phy', 'term-fall-2025', 'CAT_1', 'numeric', 100.00, 20.00, 'Classical Mechanics', 'Newtonian Laws', '2026-09-12', 'Complete the Newtonian mechanics problem set showing all free-body diagrams, tensor equations, and dimensional checks.'),
+      ('asm-2', 'Kinematics & Vectors Practical', 'c-1', 'sub-phy', 'term-fall-2025', 'STRAND_EVALUATION', 'cbc', 100.00, 30.00, 'Physical Sciences & Experimentation', 'Measurement & Precision Lab', '2026-09-15', 'Submit the comprehensive laboratory report on velocity vectors and kinematic acceleration curves, including uncertainty calculations.'),
+      ('asm-3', 'Algorithm Design & Trees Assessment', 'c-2', 'sub-cs', 'term-fall-2025', 'CAT_1', 'numeric', 100.00, 25.00, 'Computing & Logic', 'Graph Theory & Data Structures', '2026-09-10', 'Implement binary search trees, AVL rebalancing, and graph traversal algorithms in Python or TypeScript with unit tests.'),
+      ('asm-4', 'Computational Problem Solving Task', 'c-2', 'sub-cs', 'term-fall-2025', 'STRAND_EVALUATION', 'cbc', 100.00, 35.00, 'Digital Literacy & Innovation', 'Software System Design', '2026-09-18', 'Produce a detailed software architectural specification for a distributed school portal microservice with class diagrams.'),
+      ('asm-5', 'Rotational Dynamics & Torque Problem Set', 'c-1', 'sub-phy', 'term-fall-2025', 'HOMEWORK', 'numeric', 50.00, 15.00, 'Rotational Mechanics', 'Angular Momentum & Inertia', '2026-09-20', 'Solve analytical torque problems for spinning disc systems and gyroscopic precessions with complete mathematical proofs.'),
+      ('asm-6', 'Dynamic Programming & Memoization Lab Task', 'c-2', 'sub-cs', 'term-fall-2025', 'PRACTICAL_TASK', 'cbc', 50.00, 20.00, 'Algorithmic Optimization', 'Recursion & Memoization', '2026-09-22', 'Construct an optimal solution for the 0/1 Knapsack problem with dynamic programming matrix tabulation and asymptotic runtime analysis.')
       ON CONFLICT (id) DO NOTHING;
+    `);
+  } else {
+    // Ensure due_date and instructions are populated for existing rows
+    await pglite.query(`
+      UPDATE assessments SET 
+        due_date = COALESCE(due_date, '2026-09-15'),
+        instructions = COALESCE(instructions, 'Complete the assigned exercises and submit your solution documentation before the deadline.')
+      WHERE due_date IS NULL OR instructions IS NULL;
+    `);
+
+    // Insert asm-5 and asm-6 if not yet created
+    await pglite.query(`
+      INSERT INTO assessments (id, title, class_id, subject_id, term_id, assessment_type, evaluation_system, max_score, weightage, strand_name, sub_strand, due_date, instructions) VALUES
+      ('asm-5', 'Rotational Dynamics & Torque Problem Set', 'c-1', 'sub-phy', 'term-fall-2025', 'HOMEWORK', 'numeric', 50.00, 15.00, 'Rotational Mechanics', 'Angular Momentum & Inertia', '2026-09-20', 'Solve analytical torque problems for spinning disc systems and gyroscopic precessions with complete mathematical proofs.'),
+      ('asm-6', 'Dynamic Programming & Memoization Lab Task', 'c-2', 'sub-cs', 'term-fall-2025', 'PRACTICAL_TASK', 'cbc', 50.00, 20.00, 'Algorithmic Optimization', 'Recursion & Memoization', '2026-09-22', 'Construct an optimal solution for the 0/1 Knapsack problem with dynamic programming matrix tabulation and asymptotic runtime analysis.')
+      ON CONFLICT (id) DO NOTHING;
+    `);
+  }
+
+  // Seed sample assignment submissions
+  const subCountRes = await pglite.query<{ count: string }>('SELECT COUNT(*) as count FROM assignment_submissions');
+  if (Number(subCountRes.rows[0]?.count || 0) === 0) {
+    await pglite.query(`
+      INSERT INTO assignment_submissions (id, assessment_id, student_id, submission_text, file_name, file_size, external_link, comments, status) VALUES
+      ('sub-1', 'asm-1', 's-1', 'Detailed solutions to mechanics CAT 1 including tension vector calculations and free-body graphs.', 'Sophia_Martinez_Mechanics_CAT1.pdf', '1.8 MB', 'https://github.com/greenfield-stem/mechanics-solutions', 'Completed all 5 core questions and the bonus derivation.', 'graded'),
+      ('sub-2', 'asm-3', 's-1', 'Implemented BinarySearchTree with AVL rebalancing rotations and Dijkstra shortest path traversal algorithm.', 'sophia_algorithms_trees.ts', '45 KB', 'https://github.com/sophia-martinez/algorithms-trees', 'All unit test assertions passed successfully in ts-node test suite.', 'graded')
+      ON CONFLICT (assessment_id, student_id) DO NOTHING;
+    `);
+  }
+
+  // Seed initial results if empty
+  const resultsCountRes = await pglite.query<{ count: string }>('SELECT COUNT(*) as count FROM results');
+  if (Number(resultsCountRes.rows[0]?.count || 0) === 0) {
+    await pglite.query(`
+      INSERT INTO results (id, assessment_id, student_id, class_id, subject_id, term_id, evaluation_system, raw_score, percentage, grade_letter, cbc_rating, teacher_comment) VALUES
+      ('res-1', 'asm-1', 's-1', 'c-1', 'sub-phy', 'term-fall-2025', 'numeric', 94.00, 94.00, 'A', 'EE', 'Exceptional grasp of kinematic vectors and theoretical principles.'),
+      ('res-2', 'asm-2', 's-1', 'c-1', 'sub-phy', 'term-fall-2025', 'cbc', 92.00, 92.00, 'A', 'EE', 'Demonstrates rigorous lab precision and creative analytical problem-solving.'),
+      ('res-3', 'asm-3', 's-1', 'c-2', 'sub-cs', 'term-fall-2025', 'numeric', 96.00, 96.00, 'A', 'EE', 'Flawless algorithmic design and optimal time-complexity analyses.'),
+      ('res-4', 'asm-4', 's-1', 'c-2', 'sub-cs', 'term-fall-2025', 'cbc', 90.00, 90.00, 'A', 'EE', 'High innovation in systems architecture and modular code design.'),
+
+      ('res-5', 'asm-1', 's-2', 'c-1', 'sub-phy', 'term-fall-2025', 'numeric', 98.00, 98.00, 'A', 'EE', 'Mastery in advanced mechanics and calculus-based modeling.'),
+      ('res-6', 'asm-2', 's-2', 'c-1', 'sub-phy', 'term-fall-2025', 'cbc', 95.00, 95.00, 'A', 'EE', 'Exemplary leadership during collaborative experimental setups.'),
+
+      ('res-7', 'asm-1', 's-4', 'c-1', 'sub-phy', 'term-fall-2025', 'numeric', 78.00, 78.00, 'B+', 'ME', 'Steady improvement; recommended practice in rotational dynamics.'),
+      ('res-8', 'asm-2', 's-4', 'c-1', 'sub-phy', 'term-fall-2025', 'cbc', 82.00, 82.00, 'A-', 'ME', 'Good laboratory rigor; detailed observational summaries.')
+      ON CONFLICT (assessment_id, student_id, term_id) DO NOTHING;
+    `);
+  }
+
+  // Seed initial attendance entries for Sophia Martinez (s-1) if empty
+  const attCountRes = await pglite.query<{ count: string }>('SELECT COUNT(*) as count FROM attendance');
+  if (Number(attCountRes.rows[0]?.count || 0) === 0) {
+    await pglite.query(`
+      INSERT INTO attendance (id, student_id, class_id, term_id, date, status, remarks) VALUES
+      ('att-s1-01', 's-1', 'c-1', 'term-fall-2025', '2026-08-20', 'present', 'On time'),
+      ('att-s1-02', 's-1', 'c-1', 'term-fall-2025', '2026-08-21', 'present', 'On time'),
+      ('att-s1-03', 's-1', 'c-1', 'term-fall-2025', '2026-08-24', 'present', 'Participated actively'),
+      ('att-s1-04', 's-1', 'c-1', 'term-fall-2025', '2026-08-25', 'present', 'On time'),
+      ('att-s1-05', 's-1', 'c-1', 'term-fall-2025', '2026-08-26', 'present', 'On time'),
+      ('att-s1-06', 's-1', 'c-1', 'term-fall-2025', '2026-08-27', 'late', 'Medical clinic appointment')
+      ON CONFLICT (student_id, date, class_id) DO NOTHING;
     `);
   }
 }
@@ -402,3 +562,93 @@ async function seedInitialData() {
     ON CONFLICT (id) DO NOTHING;
   `);
 }
+
+/**
+ * Seeds initial authenticated users with bcrypt hashed passwords and secondary profile mappings
+ */
+async function seedUsersAndProfiles(): Promise<void> {
+  try {
+    const userCountRes = await pglite.query<{ count: string }>('SELECT COUNT(*) as count FROM users');
+    if (Number(userCountRes.rows[0]?.count || 0) === 0) {
+      const salt = bcrypt.genSaltSync(10);
+      const defaultAdminPass = bcrypt.hashSync('Admin@2026!', salt);
+      const defaultTeacherPass = bcrypt.hashSync('Teacher@2026!', salt);
+      const defaultParentPass = bcrypt.hashSync('Parent@2026!', salt);
+      const defaultStudentPass = bcrypt.hashSync('Student@2026!', salt);
+
+      const users = [
+        ['usr-admin-01', 'SCH-KEN-2026-001', 'admin@greenfield.edu', defaultAdminPass, 'Arthur', 'Pendelton', 'admin', 'active'],
+        ['usr-admin-02', 'SCH-KEN-2026-001', 'principal@greenfield.edu', defaultAdminPass, 'Jeremiah', 'Thorne', 'principal', 'active'],
+        ['usr-teacher-01', 'SCH-KEN-2026-001', 'e.vance@greenfield.edu', defaultTeacherPass, 'Eleanor', 'Vance', 'teacher', 'active'],
+        ['usr-teacher-02', 'SCH-KEN-2026-001', 'm.thorne@greenfield.edu', defaultTeacherPass, 'Marcus', 'Thorne', 'teacher', 'active'],
+        ['usr-parent-01', 'SCH-KEN-2026-001', 'carlos.martinez@gmail.com', defaultParentPass, 'Carlos', 'Martinez', 'parent', 'active'],
+        ['usr-parent-02', 'SCH-KEN-2026-001', 'li.chen@outlook.com', defaultParentPass, 'Li Wei', 'Chen', 'parent', 'active'],
+        ['usr-student-01', 'SCH-KEN-2026-001', 's.martinez@greenfield.edu', defaultStudentPass, 'Sophia', 'Martinez', 'student', 'active'],
+        ['usr-student-02', 'SCH-KEN-2026-001', 'a.chen@greenfield.edu', defaultStudentPass, 'Alexander', 'Chen', 'student', 'active'],
+      ];
+
+      for (const u of users) {
+        await pglite.query(
+          `INSERT INTO users (id, school_id, email, password_hash, first_name, last_name, role, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (email) DO NOTHING;`,
+          u
+        );
+      }
+
+      // Link Secondary Teachers Profile
+      const teachers = [
+        ['tch-01', 'usr-teacher-01', 'STF-PHY-01', 'Physics & Classical Mechanics', 'Sciences', '+254 711 001122'],
+        ['tch-02', 'usr-teacher-02', 'STF-BIO-02', 'Biology & Ecology', 'Sciences', '+254 711 002233'],
+      ];
+      for (const t of teachers) {
+        await pglite.query(
+          `INSERT INTO teachers (id, user_id, staff_id, specialization, department, phone)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (id) DO NOTHING;`,
+          t
+        );
+      }
+
+      // Link Secondary Parents Profile
+      const parents = [
+        ['prt-01', 'usr-parent-01', 'ID-88991122', 'Civil Engineer', '+254 708 374149'],
+        ['prt-02', 'usr-parent-02', 'ID-44556677', 'Financial Analyst', '+254 712 345678'],
+      ];
+      for (const p of parents) {
+        await pglite.query(
+          `INSERT INTO parents (id, user_id, national_id, occupation, phone)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (id) DO NOTHING;`,
+          p
+        );
+      }
+
+      // Link student secondary profile
+      await pglite.query(`UPDATE students SET user_id = 'usr-student-01' WHERE id = 's-1';`);
+      await pglite.query(`UPDATE students SET user_id = 'usr-student-02' WHERE id = 's-2';`);
+
+      // Update parent_students parent_id mapping
+      await pglite.query(`UPDATE parent_students SET parent_id = 'prt-01' WHERE parent_user_id = 'usr-parent-01';`);
+      await pglite.query(`UPDATE parent_students SET parent_id = 'prt-02' WHERE parent_user_id = 'usr-parent-02';`);
+
+      // Seed Teacher Subject & Class Assignments
+      const teacherAssignments = [
+        ['ta-01', 'tch-01', 'c-1', 'sub-phy', '2025-2026', 'term-fall-2025', true],
+        ['ta-02', 'tch-01', 'c-2', 'sub-cs', '2025-2026', 'term-fall-2025', true],
+        ['ta-03', 'tch-02', 'c-4', 'sub-agr', '2025-2026', 'term-fall-2025', true],
+      ];
+      for (const ta of teacherAssignments) {
+        await pglite.query(
+          `INSERT INTO teacher_assignments (id, teacher_id, class_id, subject_id, academic_year, term_id, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (teacher_id, class_id, subject_id, term_id) DO NOTHING;`,
+          ta
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error seeding users and secondary profiles:', err);
+  }
+}
+

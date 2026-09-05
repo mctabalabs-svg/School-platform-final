@@ -2,8 +2,29 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { pglite, qb, initDatabase } from './server/db';
-import { authenticateJWT, requireRole, generateToken, AuthenticatedRequest } from './server/authMiddleware';
+import {
+  authenticateToken,
+  requireRole,
+  verifyParentOwnership,
+  verifyTeacherAssignment,
+  generateToken,
+  AuthenticatedRequest,
+} from './server/authMiddleware';
+import { loginController, getProfileController } from './server/authController';
 import { saveAssessmentResultsController } from './server/assessmentController';
+import {
+  getParentsController,
+  createParentController,
+  linkParentToStudentsController,
+  unlinkParentStudentController,
+  getParentDashboardController,
+} from './server/parentController';
+import {
+  getStudentAssignmentsController,
+  getStudentSubmissionHistoryController,
+  submitAssignmentController,
+  deleteSubmissionController,
+} from './server/assignmentController';
 import {
   initiateStkPushController,
   mpesaCallbackController,
@@ -39,7 +60,7 @@ async function startServer() {
    */
   app.post(
     '/api/payments/stk-push',
-    authenticateJWT,
+    authenticateToken,
     requireRole(['parent', 'super_admin', 'principal', 'accountant']),
     (req: Request, res: Response) => {
       return initiateStkPushController(req as AuthenticatedRequest, res);
@@ -75,41 +96,309 @@ async function startServer() {
   });
 
   // =========================================================================
-  // AUTHENTICATION & TOKEN DEMO (DAY 2 JWT INTEGRATION)
+  // AUTHENTICATION & MULTI-ROLE ACCESS CONTROLLER (DAY 2 JWT INTEGRATION)
   // =========================================================================
+
+  /**
+   * 1. PRODUCTION LOGIN CONTROLLER ENDPOINT: POST /api/auth/login
+   * - Queries unified `users` table for email and verifies status === 'active'
+   * - Securely compares incoming password with `password_hash` using bcrypt
+   * - Queries secondary profile tables ('teachers', 'parents', 'students') by `user_id` to extract `profile_id`
+   * - Signs and issues JWT access token { id, school_id, role, profile_id }
+   * - Logs access audit row into immutable `audit_logs` in a database transaction
+   */
+  app.post('/api/auth/login', (req: Request, res: Response) => {
+    return loginController(req, res);
+  });
+
+  /**
+   * GET /api/auth/profile - Fetch current authenticated user and linked secondary profile
+   */
+  app.get('/api/auth/profile', authenticateToken, (req: Request, res: Response) => {
+    return getProfileController(req as AuthenticatedRequest, res);
+  });
+
+  /**
+   * GET /api/auth/users - List users for Admin / Principal Management
+   */
+  app.get(
+    '/api/auth/users',
+    requireRole(['admin', 'super_admin', 'principal']),
+    async (_req: Request, res: Response) => {
+      try {
+        const usersRes = await pglite.query(`
+          SELECT 
+            u.id, u.school_id, u.email, u.first_name, u.last_name, u.role, u.status, u.created_at,
+            t.id as teacher_profile_id, t.staff_id, t.specialization,
+            p.id as parent_profile_id, p.national_id, p.occupation,
+            s.id as student_profile_id, s.student_id as student_code, s.grade as student_grade
+          FROM users u
+          LEFT JOIN teachers t ON u.id = t.user_id
+          LEFT JOIN parents p ON u.id = p.user_id
+          LEFT JOIN students s ON u.id = s.user_id
+          ORDER BY u.created_at DESC;
+        `);
+        res.json({ success: true, count: usersRes.rows.length, users: usersRes.rows });
+      } catch (error: any) {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  );
+
+  // =========================================================================
+  // DAY 5: PARENT ACCOUNT REGISTRATION & PARENT-STUDENT LINKING (ADMIN)
+  // =========================================================================
+
+  /**
+   * GET /api/admin/parents
+   * List all parent accounts with profile data and linked students
+   */
+  app.get(
+    '/api/admin/parents',
+    authenticateToken,
+    requireRole(['admin', 'super_admin', 'principal']),
+    (req: Request, res: Response) => {
+      return getParentsController(req, res);
+    }
+  );
+
+  /**
+   * POST /api/admin/parents
+   * Register a new Parent user account and linked secondary parent profile
+   */
+  app.post(
+    '/api/admin/parents',
+    authenticateToken,
+    requireRole(['admin', 'super_admin', 'principal']),
+    (req: Request, res: Response) => {
+      return createParentController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * POST /api/admin/parents/link-students
+   * Link a target Parent account to multiple selected Students in parent_students table
+   */
+  app.post(
+    '/api/admin/parents/link-students',
+    authenticateToken,
+    requireRole(['admin', 'super_admin', 'principal']),
+    (req: Request, res: Response) => {
+      return linkParentToStudentsController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * DELETE /api/admin/parents/unlink-student
+   * Remove a student relationship from a parent
+   */
+  app.delete(
+    '/api/admin/parents/unlink-student',
+    authenticateToken,
+    requireRole(['admin', 'super_admin', 'principal']),
+    (req: Request, res: Response) => {
+      return unlinkParentStudentController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * GET /api/parent/dashboard
+   * Shows linked students' attendance and recent academic progress summaries.
+   * Guard: Accessible ONLY when the session role is 'parent'.
+   */
+  app.get(
+    '/api/parent/dashboard',
+    authenticateToken,
+    requireRole(['parent']),
+    (req: Request, res: Response) => {
+      return getParentDashboardController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * GET /api/students/:id/assignments
+   * Fetch all assignments, due dates, instructions, submissions, and grading results for a student
+   */
+  app.get(
+    '/api/students/:id/assignments',
+    authenticateToken,
+    (req: Request, res: Response) => {
+      return getStudentAssignmentsController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * GET /api/student/assignments
+   * Fetch assignments for the currently logged-in student session
+   */
+  app.get(
+    '/api/student/assignments',
+    authenticateToken,
+    (req: Request, res: Response) => {
+      req.params.id = 'me';
+      return getStudentAssignmentsController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * GET /api/students/:id/submission-history
+   * Fetch complete submission history and grading status for a student
+   */
+  app.get(
+    '/api/students/:id/submission-history',
+    authenticateToken,
+    (req: Request, res: Response) => {
+      return getStudentSubmissionHistoryController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * GET /api/student/submission-history
+   * Fetch submission history for current logged-in student session
+   */
+  app.get(
+    '/api/student/submission-history',
+    authenticateToken,
+    (req: Request, res: Response) => {
+      req.params.id = 'me';
+      return getStudentSubmissionHistoryController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * POST /api/students/:id/submissions
+   * Submit an assignment (file upload, text answers, or external URL link)
+   */
+  app.post(
+    '/api/students/:id/submissions',
+    authenticateToken,
+    (req: Request, res: Response) => {
+      return submitAssignmentController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * DELETE /api/students/:studentId/submissions/:assessmentId
+   * Retract or un-submit an assignment submission
+   */
+  app.delete(
+    '/api/students/:studentId/submissions/:assessmentId',
+    authenticateToken,
+    (req: Request, res: Response) => {
+      return deleteSubmissionController(req as AuthenticatedRequest, res);
+    }
+  );
+
+  /**
+   * GET /api/auth/teacher-assignments - List teacher subject & class mappings
+   */
+  app.get(
+    '/api/auth/teacher-assignments',
+    authenticateToken,
+    async (req: Request, res: Response) => {
+      try {
+        const { teacher_id } = req.query;
+        let query = `
+          SELECT 
+            ta.*,
+            c.code as class_code,
+            c.title as class_title,
+            c.grade as class_grade,
+            sub.name as subject_name,
+            sub.code as subject_code,
+            u.first_name || ' ' || u.last_name as teacher_name
+          FROM teacher_assignments ta
+          JOIN classes c ON ta.class_id = c.id
+          JOIN subjects sub ON ta.subject_id = sub.id
+          JOIN teachers t ON ta.teacher_id = t.id
+          JOIN users u ON t.user_id = u.id
+          WHERE 1=1
+        `;
+        const params: any[] = [];
+        if (teacher_id) {
+          params.push(teacher_id);
+          query += ` AND ta.teacher_id = $${params.length}`;
+        }
+        query += ' ORDER BY c.code ASC;';
+        const result = await pglite.query(query, params);
+        res.json({ success: true, assignments: result.rows });
+      } catch (error: any) {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  );
+
   app.post('/api/auth/demo-token', (req: Request, res: Response) => {
     const userRole = (req.body.role as any) || 'parent';
-    const userName = req.body.name || (userRole === 'parent' ? 'Carlos Martinez (Parent)' : 'Dr. Eleanor Vance (Dean of Academics)');
+    const isStudent = userRole === 'student';
+    const isParent = userRole === 'parent';
+    const isTeacher = userRole === 'teacher';
+
+    const userName = req.body.name || (
+      isStudent ? 'Sophia Martinez (Student)' :
+      isParent ? 'Carlos Martinez (Parent)' :
+      isTeacher ? 'Dr. Eleanor Vance (Dean of Academics)' :
+      'Arthur Pendelton (Admin)'
+    );
+    const userEmail = isStudent
+      ? 's.martinez@greenfield.edu'
+      : isParent
+      ? 'carlos.martinez@gmail.com'
+      : isTeacher
+      ? 'e.vance@greenfield.edu'
+      : 'admin@greenfield.edu';
+
+    const userId = isStudent
+      ? 'usr-student-01'
+      : isParent
+      ? 'usr-parent-01'
+      : isTeacher
+      ? 'usr-teacher-01'
+      : 'usr-admin-01';
+
+    const profileId = isStudent
+      ? 's-1'
+      : isParent
+      ? 'prt-01'
+      : isTeacher
+      ? 'tch-01'
+      : 'usr-admin-01';
+
     const token = generateToken({
-      id: userRole === 'parent' ? 'usr-parent-01' : 'usr-admin-01',
+      id: userId,
       name: userName,
-      email: userRole === 'parent' ? 'carlos.martinez@gmail.com' : 'e.vance@greenfield.edu',
+      email: userEmail,
       role: userRole,
       school_id: 'SCH-KEN-2026-001',
-      department: userRole === 'parent' ? undefined : 'Sciences & Curriculum Assessment',
-      phone: userRole === 'parent' ? '254708374149' : undefined,
+      profile_id: profileId,
     });
 
     res.json({
       success: true,
       token,
       user: {
-        id: userRole === 'parent' ? 'usr-parent-01' : 'usr-admin-01',
+        id: userId,
         name: userName,
-        email: userRole === 'parent' ? 'carlos.martinez@gmail.com' : 'e.vance@greenfield.edu',
+        email: userEmail,
         role: userRole,
-        phone: userRole === 'parent' ? '254708374149' : undefined,
+        profile_id: profileId,
+        phone: isParent ? '254708374149' : undefined,
       },
     });
   });
 
   // =========================================================================
   // 1. COMPETENCY-BASED ASSESSMENT CONTROLLER ENDPOINT (DAY 7-8)
-  // POST /api/assessments/results (Guarded with JWT Authentication)
+  // POST /api/assessments/results (Guarded with JWT Authentication & Teacher Assignment Guard)
   // =========================================================================
-  app.post('/api/assessments/results', authenticateJWT, (req: Request, res: Response) => {
-    return saveAssessmentResultsController(req as AuthenticatedRequest, res);
-  });
+  app.post(
+    '/api/assessments/results',
+    requireRole(['teacher', 'super_admin', 'principal', 'head_of_curriculum']),
+    verifyTeacherAssignment,
+    (req: Request, res: Response) => {
+      return saveAssessmentResultsController(req as AuthenticatedRequest, res);
+    }
+  );
 
   // GET /api/assessments - List assessments for a class and term
   app.get('/api/assessments', async (req: Request, res: Response) => {
@@ -352,6 +641,80 @@ async function startServer() {
   // =========================================================================
   // 2. HELPER API ENDPOINTS FOR ROSTER & DATA
   // =========================================================================
+
+  // GET /api/students - List all students with detailed profile
+  app.get('/api/students', async (_req: Request, res: Response) => {
+    try {
+      const result = await pglite.query(`
+        SELECT 
+          s.*,
+          fa.balance as fee_balance,
+          fa.status as fee_status,
+          fa.total_billed,
+          fa.amount_paid
+        FROM students s
+        LEFT JOIN student_fee_accounts fa ON s.id = fa.student_id
+        ORDER BY s.last_name ASC;
+      `);
+      res.json({ success: true, count: result.rows.length, students: result.rows });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/students/:id/transcript - Fetch comprehensive student report card / transcript
+  app.get('/api/students/:id/transcript', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const studentRes = await pglite.query<any>('SELECT * FROM students WHERE id = $1 OR student_id = $1 LIMIT 1;', [id]);
+      if (studentRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Student not found.' });
+      }
+      const student: any = studentRes.rows[0];
+
+      // Fetch results with subject and assessment info
+      const resultsRes = await pglite.query(`
+        SELECT 
+          r.*,
+          a.title as assessment_title,
+          a.max_score,
+          a.strand_name,
+          a.sub_strand,
+          s.name as subject_name,
+          s.code as subject_code
+        FROM results r
+        JOIN assessments a ON r.assessment_id = a.id
+        JOIN subjects s ON r.subject_id = s.id
+        WHERE r.student_id = $1
+        ORDER BY s.name ASC;
+      `, [student.id]);
+
+      // Fetch fee status
+      const feeRes = await pglite.query('SELECT * FROM student_fee_accounts WHERE student_id = $1 LIMIT 1;', [student.id]);
+      const feeAccount = feeRes.rows[0] || null;
+
+      // Fetch attendance stats
+      const attRes = await pglite.query(`
+        SELECT 
+          COUNT(*) as total_days,
+          COUNT(CASE WHEN status = 'present' THEN 1 END) as present_days,
+          COUNT(CASE WHEN status = 'absent' THEN 1 END) as absent_days,
+          COUNT(CASE WHEN status = 'late' THEN 1 END) as late_days
+        FROM attendance
+        WHERE student_id = $1;
+      `, [student.id]);
+
+      res.json({
+        success: true,
+        student,
+        academic_results: resultsRes.rows,
+        fee_account: feeAccount,
+        attendance_summary: attRes.rows[0] || { total_days: 0, present_days: 0, absent_days: 0, late_days: 0 },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // GET /api/classes - List all classes with student count
   app.get('/api/classes', async (_req: Request, res: Response) => {

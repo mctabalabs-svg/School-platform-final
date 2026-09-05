@@ -140,5 +140,83 @@ export interface PaymentRecordItem {
   updated_at?: string;
 }
 
-export type TabType = 'students' | 'teachers' | 'classes' | 'attendance' | 'grading' | 'finance' | 'reports';
+export interface AssignmentSubmission {
+  id: string;
+  submission_text?: string | null;
+  file_name?: string | null;
+  file_size?: string | number | null;
+  file_url?: string | null;
+  attachment_type?: string | null;
+  external_link?: string | null;
+  student_comments?: string | null;
+  submitted_at: string;
+  updated_at?: string;
+}
+
+export interface SubmissionHistoryItem {
+  id: string;
+  assessment_id: string;
+  assignment_title: string;
+  class_name: string;
+  class_code: string;
+  subject_name: string;
+  subject_code: string;
+  assessment_type: string;
+  evaluation_system: 'numeric' | 'cbc';
+  max_score: number;
+  weightage: number;
+  due_date: string;
+  file_name?: string | null;
+  file_size?: string | number | null;
+  file_url?: string | null;
+  attachment_type?: string | null;
+  external_link?: string | null;
+  submission_text?: string | null;
+  student_comments?: string | null;
+  submitted_at: string;
+  updated_at?: string;
+  status: 'graded' | 'submitted' | 'late' | 'in_review';
+  is_graded: boolean;
+  result?: {
+    raw_score: number;
+    percentage: number;
+    grade_letter?: string;
+    cbc_rating?: string;
+    teacher_comment?: string;
+    graded_at?: string;
+  } | null;
+}
+
+export interface StudentAssignmentItem {
+  id: string;
+  title: string;
+  class_id: string;
+  class_name: string;
+  class_code: string;
+  room?: string;
+  subject_id: string;
+  subject_name: string;
+  subject_code: string;
+  term_id: string;
+  assessment_type: string;
+  evaluation_system: 'numeric' | 'cbc';
+  max_score: number;
+  weightage: number;
+  strand_name?: string;
+  sub_strand?: string;
+  due_date: string;
+  instructions: string;
+  status: 'graded' | 'submitted' | 'pending' | 'late';
+  is_overdue: boolean;
+  submission?: AssignmentSubmission | null;
+  result?: {
+    raw_score: number;
+    percentage: number;
+    grade_letter?: string;
+    cbc_rating?: string;
+    teacher_comment?: string;
+  } | null;
+}
+
+export type TabType = 'overview' | 'assignments' | 'parent_dashboard' | 'parents' | 'students' | 'teachers' | 'classes' | 'attendance' | 'grading' | 'finance' | 'reports' | 'audits';
 

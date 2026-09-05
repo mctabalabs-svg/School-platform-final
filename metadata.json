@@ -1,6 +1,6 @@
 {
   "name": "Greenfield Academy Dashboard",
-  "description": "A modern and professional school management dashboard featuring student management, admin credentials, and institutional metrics.",
+  "description": "Comprehensive school management portal with multi-role access, student assignment submission portal with file upload, and parent dashboard with linked student attendance and academic progress summaries.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
