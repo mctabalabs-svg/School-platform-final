@@ -15,12 +15,10 @@
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
-    "paths": {
-      "@/*": [
-        "./*"
-      ]
-    },
-    "allowImportingTsExtensions": true,
-    "noEmit": true
-  }
+    "noEmit": false,
+    "outDir": "./.ts-out",
+    "rootDir": "./",
+    "removeComments": false
+  },
+  "include": ["server.ts", "server/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Download, Shield, Sparkles } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, Download, Plus } from 'lucide-react';
 import { AdminProfile } from '../types';
 
 interface WelcomeCardProps {
@@ -16,17 +16,22 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
   return (
     <div
       id="welcome-card-container"
-      className="bg-white rounded-xl p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden shrink-0"
+      className="welcome-panel rounded-lg p-6 sm:p-8 border border-emerald-900/10 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden shrink-0"
     >
-      {/* Decorative skewed accent */}
-      <div className="absolute right-0 top-0 h-full w-32 bg-indigo-600 opacity-5 -skew-x-12 translate-x-16 pointer-events-none" />
+      <div className="welcome-mark pointer-events-none absolute right-8 top-1/2 hidden h-48 w-48 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 lg:flex">
+        <div className="h-32 w-32 rounded-full border border-white/10" />
+      </div>
 
       <div className="relative z-10 space-y-1 max-w-2xl">
-        <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">
-          Welcome back, {profile.name}
+        <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase text-emerald-100/75">
+          <CalendarDays className="h-3.5 w-3.5" />
+          <span>{profile.academicYear} <span className="mx-1 text-emerald-100/40">/</span> {profile.term}</span>
+        </div>
+        <h2 className="text-2xl sm:text-3xl font-semibold text-white">
+          Good morning, {profile.name.split(' ')[0]}
         </h2>
-        <p className="text-slate-500 text-base sm:text-lg">
-          Managing {profile.school} Central District ({profile.campus})
+        <p className="text-emerald-50/75 text-sm sm:text-base">
+          {profile.school} <span className="mx-1 text-emerald-100/40">/</span> {profile.campus}
         </p>
 
         {/* Action Controls */}
@@ -35,7 +40,7 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
             id="quick-add-student-btn"
             type="button"
             onClick={onAddStudentClick}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#e7a66c] px-3.5 py-2 text-xs font-semibold text-[#203b32] shadow-sm transition-colors hover:bg-[#f0b984] active:bg-[#d99558] sm:text-sm cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Enroll Student</span>
@@ -45,22 +50,23 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
             id="quick-export-report-btn"
             type="button"
             onClick={onExportReportClick}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/15 sm:text-sm cursor-pointer"
           >
-            <Download className="w-4 h-4 text-slate-400" />
+            <Download className="w-4 h-4 text-emerald-100/70" />
             <span>Export Reports</span>
           </button>
         </div>
       </div>
 
       {/* System Status Block from Design */}
-      <div className="relative z-10 hidden lg:block bg-indigo-50 px-6 py-3.5 rounded-2xl border border-indigo-100 shrink-0">
-        <div className="text-indigo-600 text-xs font-bold uppercase tracking-widest">
-          System Status
+      <div className="relative z-10 hidden min-w-52 rounded-md border border-white/15 bg-white/10 px-4 py-3 lg:block">
+        <div className="text-emerald-100/60 text-[10px] font-semibold uppercase">
+          Signed in as
         </div>
-        <div className="flex items-center gap-2 mt-1">
-          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-          <span className="text-slate-700 font-semibold text-sm">All modules operational</span>
+        <div className="mt-1 flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-[#e7a66c]"></div>
+          <span className="text-sm font-medium text-white">{profile.role}</span>
+          <ArrowUpRight className="ml-auto h-4 w-4 text-emerald-100/60" />
         </div>
       </div>
     </div>

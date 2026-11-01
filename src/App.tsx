@@ -157,11 +157,13 @@ export default function App() {
           />
 
           <InfoGrid
-            profile={{
-              ...initialAdminProfile,
-              name: session.name,
-              role: session.role.toUpperCase(),
-              email: session.email,
+            metrics={{
+              students: students.length,
+              classes: classes.length,
+              teachers: teachers.length,
+              attendance: students.length
+                ? students.reduce((total, student) => total + student.attendanceRate, 0) / students.length
+                : 0,
             }}
           />
 

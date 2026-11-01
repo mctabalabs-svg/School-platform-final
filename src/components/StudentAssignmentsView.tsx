@@ -186,6 +186,7 @@ export const StudentAssignmentsView: React.FC<StudentAssignmentsViewProps> = ({
         sub_strand: 'Newtonian Laws',
         instructions: 'Complete theoretical and experimental problems on momentum, impulse, and circular kinematics.',
         status: 'graded',
+        is_overdue: false,
         submission: {
           id: 'sub-demo-1',
           file_name: 'Sophia_Martinez_Mechanics_CAT1.pdf',
@@ -221,6 +222,7 @@ export const StudentAssignmentsView: React.FC<StudentAssignmentsViewProps> = ({
         sub_strand: 'Measurement & Precision Lab',
         instructions: 'Record vernier caliper and micrometer screw gauge observations and calculate standard uncertainty.',
         status: 'submitted',
+        is_overdue: false,
         submission: {
           id: 'sub-demo-2',
           file_name: 'Vectors_Experiment_Report.pdf',
@@ -249,6 +251,7 @@ export const StudentAssignmentsView: React.FC<StudentAssignmentsViewProps> = ({
         sub_strand: 'Graph Theory & Data Structures',
         instructions: 'Implement a binary search tree in TypeScript/Python with in-order traversal and balancing functions.',
         status: 'pending',
+        is_overdue: true,
       },
       {
         id: 'asm-4',
@@ -269,6 +272,7 @@ export const StudentAssignmentsView: React.FC<StudentAssignmentsViewProps> = ({
         sub_strand: 'Software System Design',
         instructions: 'Design an interactive school management module wireframe and data flow architecture.',
         status: 'pending',
+        is_overdue: false,
       },
     ]);
 

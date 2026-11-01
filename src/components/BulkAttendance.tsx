@@ -804,7 +804,11 @@ export const BulkAttendance: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {auditLogs.map((log) => {
                     const details = log.details || {};
-                    const breakdown = details.breakdown || {};
+                    const breakdown: NonNullable<AuditLogEntry['details']['breakdown']> = details.breakdown || {
+                      present: 0,
+                      absent: 0,
+                      late: 0,
+                    };
 
                     return (
                       <tr key={log.id} className="hover:bg-slate-50">

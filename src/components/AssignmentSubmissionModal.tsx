@@ -59,7 +59,7 @@ export const AssignmentSubmissionModal: React.FC<AssignmentSubmissionModalProps>
     existingSub?.file_name
       ? {
           name: existingSub.file_name,
-          size: existingSub.file_size || 'Unknown size',
+          size: String(existingSub.file_size || 'Unknown size'),
           type: existingSub.attachment_type || 'application/octet-stream',
           dataUrl: existingSub.file_url || undefined,
         }

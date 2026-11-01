@@ -23,6 +23,7 @@ export interface Student {
   gpa: number;
   status: 'Active' | 'On Leave' | 'Graduated' | 'Pending';
   enrolledDate: string;
+  enrolledClasses?: string[];
   avatarUrl?: string;
 }
 
