@@ -1,15 +1,13 @@
-import { PGlite } from '@electric-sql/pglite';
 import knex from 'knex';
 import bcrypt from 'bcryptjs';
-import path from 'path';
+import { database } from './database';
 
 // Knex Query Builder instance with PostgreSQL dialect
 export const qb = knex({
   client: 'pg',
 });
 
-// PGlite instance (WASM PostgreSQL with ACID transactions and ON CONFLICT support)
-export const pglite = new PGlite();
+export const pglite = database;
 
 export interface DBTransaction {
   query: (sql: string, params?: any[]) => Promise<any>;
@@ -21,7 +19,44 @@ export interface DBTransaction {
  * - audit_logs table (immutable ledger)
  * - classes, students, enrollments, terms tables
  */
-export async function initDatabase(): Promise<void> {
+export async function initDatabase(options: { seed?: boolean } = {}): Promise<void> {
+  if (options.seed !== false) {
+    await pglite.query(`
+      CREATE TABLE IF NOT EXISTS platform_admins (
+        id VARCHAR(64) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        first_name VARCHAR(128) NOT NULL,
+        last_name VARCHAR(128) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pglite.query(`
+      CREATE TABLE IF NOT EXISTS schools (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        admin_email VARCHAR(255) NOT NULL,
+        schema_name VARCHAR(63) NOT NULL UNIQUE,
+        status VARCHAR(32) NOT NULL DEFAULT 'setup_pending'
+          CHECK (status IN ('setup_pending', 'active', 'suspended')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await pglite.query(`
+      CREATE TABLE IF NOT EXISTS platform_school_admins (
+        id VARCHAR(64) PRIMARY KEY,
+        school_id VARCHAR(64) NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        first_name VARCHAR(128) NOT NULL,
+        last_name VARCHAR(128) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'setup_pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await bootstrapPlatformAdmin();
+  }
+
   // 1. Terms Table
   await pglite.query(`
     CREATE TABLE IF NOT EXISTS terms (
@@ -312,6 +347,8 @@ export async function initDatabase(): Promise<void> {
     // Ignore if column exists
   }
 
+  if (options.seed === false) return;
+
   // Seed default data if database is empty
   await seedInitialData();
 
@@ -321,6 +358,25 @@ export async function initDatabase(): Promise<void> {
   // Ensure fee accounts, parents, users, and teacher assignments exist
   await seedFeeAccountsAndParents();
   await seedUsersAndProfiles();
+}
+
+async function bootstrapPlatformAdmin() {
+  const email = process.env.PLATFORM_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.PLATFORM_ADMIN_PASSWORD;
+  if (!email && !password) return;
+  if (!email || !password || password.length < 16 || Buffer.byteLength(password, 'utf8') > 72) {
+    throw new Error('Set PLATFORM_ADMIN_EMAIL and a PLATFORM_ADMIN_PASSWORD that is at least 16 characters and no more than 72 bytes.');
+  }
+
+  const firstName = process.env.PLATFORM_ADMIN_FIRST_NAME?.trim() || 'Platform';
+  const lastName = process.env.PLATFORM_ADMIN_LAST_NAME?.trim() || 'Administrator';
+  const passwordHash = await bcrypt.hash(password, 12);
+  await pglite.query(
+    `INSERT INTO platform_admins (id, email, password_hash, first_name, last_name)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (email) DO NOTHING;`,
+    [`platform-${crypto.randomUUID()}`, email, passwordHash, firstName, lastName]
+  );
 }
 
 async function seedFeeAccountsAndParents() {
@@ -651,4 +707,3 @@ async function seedUsersAndProfiles(): Promise<void> {
     console.error('Error seeding users and secondary profiles:', err);
   }
 }
-

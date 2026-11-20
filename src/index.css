@@ -14,9 +14,63 @@
 
 body {
   min-width: 360px;
-  background: #f3f6f3;
+  background: #f5f7f4;
   color: #17231f;
   font-family: 'Aptos', 'Segoe UI', sans-serif;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #5d8a6e;
+  outline-offset: 2px;
+}
+
+.login-story {
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 82% 18%, rgb(91 137 105 / 25%), transparent 34%),
+    radial-gradient(ellipse at 12% 90%, rgb(83 130 96 / 20%), transparent 32%),
+    linear-gradient(145deg, #173b30 0%, #1e4939 52%, #183a30 100%);
+}
+
+.login-orbit {
+  position: absolute;
+  z-index: -1;
+  width: min(58vw, 680px);
+  aspect-ratio: 1;
+  border: 1px solid rgb(237 231 204 / 9%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.login-orbit-one {
+  top: 7%;
+  right: -25%;
+  box-shadow:
+    0 0 0 42px rgb(237 231 204 / 3%),
+    0 0 0 84px rgb(237 231 204 / 2%);
+}
+
+.login-orbit-two {
+  right: -10%;
+  bottom: -42%;
+  width: min(42vw, 510px);
+  border-color: rgb(237 231 204 / 7%);
+}
+
+.school-login-panel {
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgb(221 232 218 / 32%), transparent 36%),
+    #fbfcfa;
+}
+
+@media (min-width: 1024px) {
+  .school-login-panel {
+    border-left: 1px solid rgb(38 68 49 / 7%);
+  }
 }
 
 ::selection {
@@ -26,7 +80,9 @@ body {
 
 .welcome-panel {
   background-color: #173d35;
-  background-image: linear-gradient(115deg, #173d35 0%, #205144 100%);
+  background-image:
+    radial-gradient(ellipse at 82% 18%, rgb(111 157 119 / 20%), transparent 34%),
+    linear-gradient(115deg, #173d35 0%, #205144 100%);
 }
 
 .metric-tile {

@@ -1,8 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'node:crypto';
 import { pglite } from './db';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'greenfield-academy-dev-secret-key-2026';
+const configuredJwtSecret = process.env.JWT_SECRET;
+if (process.env.NODE_ENV === 'production' && (!configuredJwtSecret || configuredJwtSecret.length < 32)) {
+  throw new Error('JWT_SECRET must be configured with at least 32 characters in production.');
+}
+export const JWT_SECRET = configuredJwtSecret || randomBytes(32).toString('hex');
 
 export interface AuthenticatedUser {
   id: string;
@@ -11,6 +16,7 @@ export interface AuthenticatedUser {
   profile_id: string | null;
   name?: string;
   email?: string;
+  school_name?: string;
   phone?: string;
   department?: string;
 }
@@ -23,7 +29,7 @@ export interface AuthenticatedRequest extends Request {
  * Generates a signed JWT token with a 7d expiration
  */
 export function generateToken(user: AuthenticatedUser): string {
-  return jwt.sign(user, JWT_SECRET, { expiresIn: '7d', algorithm: 'HS256' });
+  return jwt.sign(user, JWT_SECRET, { expiresIn: '1h', algorithm: 'HS256' });
 }
 
 export const authenticateJWT = authenticateToken;
@@ -34,6 +40,32 @@ export const authenticateJWT = authenticateToken;
  */
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
+
+  if (process.env.NODE_ENV === 'production') {
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: Authentication token required.' });
+    }
+
+    const token = authHeader.slice('Bearer '.length).trim();
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized: Authentication token required.' });
+    }
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as AuthenticatedUser;
+      if (
+        typeof decoded.id !== 'string' ||
+        typeof decoded.school_id !== 'string' ||
+        typeof decoded.role !== 'string'
+      ) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid authentication token.' });
+      }
+      req.user = decoded;
+      return next();
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized: Invalid, expired, or tampered token.' });
+    }
+  }
 
   const getFallbackUser = (roleHeader?: string): AuthenticatedUser => {
     const role = roleHeader || (req.headers['x-user-role'] as string) || 'admin';

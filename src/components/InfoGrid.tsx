@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BookOpen, Check, Copy, GraduationCap, Users, UserRoundCheck } from 'lucide-react';
+import React from 'react';
+import { BookOpen, GraduationCap, Users, UserRoundCheck } from 'lucide-react';
 
 interface InfoGridProps {
   metrics: {
@@ -19,15 +19,15 @@ export const InfoGrid: React.FC<InfoGridProps> = ({ metrics }) => {
   ];
 
   return (
-    <div id="admin-info-grid" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+    <div id="admin-info-grid" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {items.map(({ label, value, detail, icon: Icon, tone }) => (
-        <section key={label} className="metric-tile flex items-center justify-between gap-4 rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm">
+        <section key={label} className="metric-tile group flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md">
           <div className="min-w-0">
             <p className="text-xs font-medium text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
+            <p className="mt-2 text-[1.8rem] font-semibold tracking-tight tabular-nums text-slate-900">{value}</p>
             <p className="mt-1 text-xs text-slate-400">{detail}</p>
           </div>
-          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tone}`}>
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tone}`}>
             <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
         </section>

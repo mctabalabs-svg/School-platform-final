@@ -1,7 +1,8 @@
 import express, { Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { pglite, qb, initDatabase } from './server/db';
+import { pglite, initDatabase } from './server/db';
 import {
   authenticateToken,
   requireRole,
@@ -10,7 +11,13 @@ import {
   generateToken,
   AuthenticatedRequest,
 } from './server/authMiddleware';
+import { schoolDatabaseScope } from './server/database';
 import { loginController, getProfileController } from './server/authController';
+import {
+  createSchoolController,
+  listSchoolsController,
+  requirePlatformAdmin,
+} from './server/platformController';
 import { saveAssessmentResultsController } from './server/assessmentController';
 import {
   getParentsController,
@@ -37,17 +44,49 @@ import {
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
+  const loginRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 8,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { error: 'Too many sign-in attempts. Please wait 15 minutes and try again.' },
+  });
 
   // JSON Body Parser
-  app.use(express.json());
+  app.use(express.json({ limit: '20kb' }));
 
   // Initialize DB tables & seed data
-  try {
-    await initDatabase();
-    console.log('[Database] PostgreSQL WASM tables initialized and verified.');
-  } catch (err) {
-    console.error('[Database] Error initializing database:', err);
-  }
+  await initDatabase();
+  console.log(
+    process.env.DATABASE_URL
+      ? '[Database] Persistent PostgreSQL initialized.'
+      : '[Database] Local PGlite initialized (single-school development mode).'
+  );
+
+  app.use('/api', (req: Request, res: Response, next) => {
+    const publicPaths = new Set(['/auth/login', '/payments/callback', '/health']);
+    if (
+      publicPaths.has(req.path) ||
+      (req.path === '/auth/demo-token' && process.env.NODE_ENV !== 'production')
+    ) {
+      return next();
+    }
+
+    return authenticateToken(req as AuthenticatedRequest, res, () =>
+      schoolDatabaseScope(req, res, next)
+    );
+  });
+
+  app.get(
+    '/api/platform/schools',
+    requirePlatformAdmin,
+    (_req: Request, res: Response) => listSchoolsController(_req, res)
+  );
+  app.post(
+    '/api/platform/schools',
+    requirePlatformAdmin,
+    (req: Request, res: Response) => createSchoolController(req, res)
+  );
 
   // =========================================================================
   // 1. SAFARICOM M-PESA DARAJA PAYMENTS (DAY 11 REAL-TIME FEE SETTLEMENT)
@@ -107,7 +146,7 @@ async function startServer() {
    * - Signs and issues JWT access token { id, school_id, role, profile_id }
    * - Logs access audit row into immutable `audit_logs` in a database transaction
    */
-  app.post('/api/auth/login', (req: Request, res: Response) => {
+  app.post('/api/auth/login', loginRateLimit, (req: Request, res: Response) => {
     return loginController(req, res);
   });
 
@@ -329,7 +368,11 @@ async function startServer() {
   );
 
   app.post('/api/auth/demo-token', (req: Request, res: Response) => {
+    const allowedRoles = new Set(['admin', 'teacher', 'parent', 'student']);
     const userRole = (req.body.role as any) || 'parent';
+    if (process.env.NODE_ENV === 'production' || !allowedRoles.has(userRole)) {
+      return res.status(404).json({ error: 'Not found.' });
+    }
     const isStudent = userRole === 'student';
     const isParent = userRole === 'parent';
     const isTeacher = userRole === 'teacher';
@@ -829,7 +872,11 @@ async function startServer() {
 
   // Health check
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', database: 'PostgreSQL WASM (Transaction & UPSERT ready)' });
+    res.json({
+      status: 'ok',
+      database: process.env.DATABASE_URL ? 'PostgreSQL' : 'PGlite development database',
+      multiSchoolProvisioning: Boolean(process.env.DATABASE_URL),
+    });
   });
 
   // =========================================================================

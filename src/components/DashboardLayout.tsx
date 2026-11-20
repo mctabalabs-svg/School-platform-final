@@ -11,20 +11,17 @@ import {
   Calendar,
   BookOpen,
   LogOut,
-  ChevronRight,
   Menu,
   X,
   School,
-  Sparkles,
-  Search,
   Bell,
-  User,
-  Layers,
   ArrowRightLeft,
-  Briefcase,
   Clock,
   Link2,
   UploadCloud,
+  ChevronDown,
+  Home,
+  ShieldCheck,
 } from 'lucide-react';
 import { UserSession } from './LoginModal';
 
@@ -54,35 +51,36 @@ export function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showDevTools, setShowDevTools] = useState(false);
 
   // 1. Programmatically define navigation links based on user role
   const getNavLinks = (): NavItem[] => {
     switch (session.role) {
       case 'teacher':
         return [
-          { id: 'classes', label: 'My Classes', icon: School, badge: 'Active' },
-          { id: 'attendance', label: 'Mark Attendance', icon: ClipboardList },
-          { id: 'grading', label: 'Enter Marks / CBC', icon: CheckCircle2, badge: 'Rubric' },
-          { id: 'reports', label: 'Academic Reports', icon: FileSpreadsheet },
+          { id: 'classes', label: 'My classes', icon: School },
+          { id: 'attendance', label: 'Attendance', icon: ClipboardList },
+          { id: 'grading', label: 'Assessments', icon: CheckCircle2 },
+          { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
         ];
 
       case 'parent':
         return [
-          { id: 'parent_dashboard', label: 'Parent Dashboard', icon: LayoutDashboard, badge: 'Overview' },
-          { id: 'students', label: 'Linked Children', icon: GraduationCap },
-          { id: 'finance', label: 'Fee Statements & M-Pesa', icon: CreditCard, badge: 'Real-Time' },
-          { id: 'reports', label: 'Official Report Cards', icon: FileSpreadsheet },
-          { id: 'attendance', label: 'Attendance Records', icon: Calendar },
+          { id: 'parent_dashboard', label: 'Dashboard', icon: LayoutDashboard },
+          { id: 'students', label: 'My children', icon: GraduationCap },
+          { id: 'finance', label: 'Fees & finance', icon: CreditCard },
+          { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
+          { id: 'attendance', label: 'Attendance', icon: Calendar },
         ];
 
       case 'student':
         return [
-          { id: 'assignments', label: 'Submit Assignments', icon: UploadCloud, badge: 'Tasks' },
-          { id: 'classes', label: 'My Timetable & Courses', icon: Calendar },
-          { id: 'grading', label: 'Academic Scores & CBC', icon: BookOpen, badge: 'CBC' },
-          { id: 'reports', label: 'My Report Card', icon: FileSpreadsheet },
-          { id: 'attendance', label: 'Attendance Record', icon: Clock },
+          { id: 'assignments', label: 'Assignments', icon: UploadCloud },
+          { id: 'classes', label: 'My classes', icon: Calendar },
+          { id: 'grading', label: 'Academic scores', icon: BookOpen },
+          { id: 'reports', label: 'My reports', icon: FileSpreadsheet },
+          { id: 'attendance', label: 'Attendance', icon: Clock },
         ];
 
       case 'admin':
@@ -90,109 +88,73 @@ export function DashboardLayout({
       case 'principal':
       default:
         return [
-          { id: 'overview', label: 'District Overview', icon: LayoutDashboard },
-          { id: 'parents', label: 'Parent-Student Linking', icon: Link2, badge: 'Day 5' },
-          { id: 'classes', label: 'Manage Classes', icon: School, badge: '4 Active' },
-          { id: 'students', label: 'Manage Students', icon: GraduationCap, badge: '10 Enrolled' },
-          { id: 'teachers', label: 'Faculty Directory', icon: Users },
-          { id: 'attendance', label: 'Attendance & Truancy', icon: ClipboardList },
-          { id: 'grading', label: 'Assessments & Strands', icon: CheckCircle2 },
-          { id: 'finance', label: 'Fee Clearance & M-Pesa', icon: CreditCard, badge: 'Audit' },
-          { id: 'reports', label: 'Summative & CBC Dossier', icon: FileSpreadsheet },
-          { id: 'audits', label: 'System Audits & Security', icon: ShieldAlert, badge: 'Immutable' },
+          { id: 'overview', label: 'Dashboard', icon: Home },
+          { id: 'students', label: 'Students', icon: GraduationCap },
+          { id: 'teachers', label: 'Teachers', icon: Users },
+          { id: 'parents', label: 'Parents', icon: Link2 },
+          { id: 'attendance', label: 'Attendance', icon: ClipboardList },
+          { id: 'classes', label: 'Academics', icon: School },
+          { id: 'grading', label: 'Assessments', icon: CheckCircle2 },
+          { id: 'finance', label: 'Fees & finance', icon: CreditCard },
+          { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
+          { id: 'audits', label: 'Settings', icon: ShieldAlert },
         ];
     }
   };
 
   const navLinks = getNavLinks();
 
-  // Role Badge Styling
-  const getRoleBadge = () => {
+  const getRoleLabel = () => {
     switch (session.role) {
       case 'admin':
       case 'super_admin':
       case 'principal':
-        return {
-          label: 'District Admin',
-          bg: 'bg-purple-100 text-purple-800 border-purple-200',
-          dot: 'bg-purple-500',
-        };
+        return 'District Admin';
       case 'teacher':
-        return {
-          label: 'Senior Faculty',
-          bg: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-          dot: 'bg-indigo-500',
-        };
+        return 'Senior Faculty';
       case 'parent':
-        return {
-          label: 'Parent Guardian',
-          bg: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-          dot: 'bg-emerald-500',
-        };
+        return 'Parent Guardian';
       case 'student':
-        return {
-          label: 'Enrolled Scholar',
-          bg: 'bg-amber-100 text-amber-800 border-amber-200',
-          dot: 'bg-amber-500',
-        };
+        return 'Enrolled Scholar';
       default:
-        return {
-          label: session.role,
-          bg: 'bg-slate-100 text-slate-800 border-slate-200',
-          dot: 'bg-slate-500',
-        };
+        return session.role;
     }
   };
 
-  const roleInfo = getRoleBadge();
-
-  // Current Breadcrumb Title
-  const currentNav = navLinks.find((n) => n.id === activeNavId) || navLinks[0];
+  const roleLabel = getRoleLabel();
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col lg:flex-row font-sans antialiased">
-      {/* ========================================================================= */}
-      {/* 1. DYNAMIC APP SIDEBAR (Desktop Fixed & Mobile Drawer)                     */}
-      {/* ========================================================================= */}
+    <div className="min-h-screen bg-[#f3f6ff] text-slate-900 flex flex-col lg:flex-row font-sans antialiased">
       <aside
         id="app-sidebar-navigation"
-        className={`fixed inset-y-0 left-0 z-40 w-72 bg-slate-900 text-white flex flex-col transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-          isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:static lg:translate-x-0'
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-[#07182f] text-white transition-all duration-200 ease-in-out lg:static lg:translate-x-0 ${
+          isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        } ${isSidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[208px]'}`}
       >
-        {/* Sidebar Header Brand */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-900/50">
-              G
+        <div className="relative flex flex-col items-center border-b border-white/10 px-4 py-5 text-center">
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 text-emerald-300 ring-1 ring-emerald-300/40">
+            <ShieldCheck className="h-11 w-11 stroke-[1.3]" />
+            <School className="absolute h-5 w-5 text-white" />
+          </div>
+          <div className={isSidebarCollapsed ? 'lg:hidden' : ''}>
+            <div className="mt-2 text-base font-bold leading-tight tracking-tight text-white">
+              {session.school_name || 'Greenfield Academy'}
             </div>
-            <div>
-              <div className="font-bold text-sm text-white tracking-tight">Greenfield Academy</div>
-              <div className="text-[11px] text-slate-400 font-mono">SCH-KEN-2026-001</div>
-            </div>
+            <div className="mt-1 text-[10px] font-medium tracking-wide text-emerald-300">Learn · Excel · Grow</div>
           </div>
           <button
             onClick={() => setIsMobileMenuOpen(false)}
-            className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+            aria-label="Close navigation menu"
+            className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white lg:hidden"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Academic Session Notice */}
-        <div className="px-5 py-3 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-          <span className="font-medium text-slate-300">2025-2026 Academic Year</span>
-          <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold text-[10px]">
-            Term 1 (Fall)
-          </span>
-        </div>
-
-        {/* Role-Specific Navigation Links */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
-          <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            {session.role === 'admin' ? 'Administrative Workspace' : `${session.role} Portal`}
+        <nav aria-label="Main navigation" className="flex-1 space-y-1 overflow-y-auto px-2.5 py-3">
+          <div className={`px-2.5 pb-2 pt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500 ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>
+            {session.role === 'admin' ? 'School workspace' : `${session.role} portal`}
           </div>
-
           {navLinks.map((item) => {
             const Icon = item.icon;
             const isActive = activeNavId === item.id;
@@ -200,192 +162,163 @@ export function DashboardLayout({
               <button
                 key={item.id}
                 id={`sidebar-nav-btn-${item.id}`}
+                type="button"
                 onClick={() => {
                   onSelectNav(item.id);
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                title={isSidebarCollapsed ? item.label : undefined}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left text-xs font-medium transition-all ${
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                    ? 'bg-blue-700 text-white shadow-md shadow-blue-950/25'
+                    : 'text-slate-300 hover:bg-white/[0.07] hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge && (
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    }`}
-                  >
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <span className={`truncate ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
+                {item.badge && !isSidebarCollapsed && (
+                  <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-semibold text-slate-200">
                     {item.badge}
                   </span>
                 )}
               </button>
             );
           })}
-        </div>
+        </nav>
 
-        {/* Quick Role Switcher Trigger (For Instant Day 2 Testing) */}
-        <div className="p-3 mx-4 mb-3 bg-slate-800/60 rounded-xl border border-slate-700/60 text-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-              <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-400" />
-              Role Simulator
-            </span>
+        {import.meta.env.DEV && (
+          <div className="mx-2.5 mb-2 rounded-lg border border-white/10 bg-white/[0.04] p-2">
             <button
-              onClick={onOpenLoginModal}
-              className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
+              type="button"
+              onClick={() => setShowDevTools((open) => !open)}
+              className="flex w-full items-center gap-2 text-[10px] font-semibold text-slate-300"
+              aria-expanded={showDevTools}
+              title={isSidebarCollapsed ? 'Development tools' : undefined}
             >
-              Sign In
+              <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+              <span className={isSidebarCollapsed ? 'lg:hidden' : ''}>Dev tools</span>
+              <ChevronDown className={`ml-auto h-3 w-3 transition-transform ${showDevTools ? 'rotate-180' : ''} ${isSidebarCollapsed ? 'lg:hidden' : ''}`} />
             </button>
+            {showDevTools && !isSidebarCollapsed && (
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                {['admin', 'teacher', 'parent', 'student'].map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/auth/demo-token', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ role }),
+                        });
+                        const data = await response.json();
+                        if (!response.ok || !data.success) {
+                          throw new Error(data.error || `Unable to switch to ${role}.`);
+                        }
+                        localStorage.setItem('ga_auth_token', data.token);
+                        localStorage.setItem('ga_user_session', JSON.stringify(data.user));
+                        window.location.reload();
+                      } catch (error) {
+                        console.error('Unable to switch demo role:', error);
+                      }
+                    }}
+                    className={`rounded px-2 py-1 text-[9px] font-medium capitalize ${session.role === role ? 'bg-blue-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/15'}`}
+                  >
+                  {role}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-slate-400 mb-2">
-            Switch authorized roles to test role-filtered links and ownership guards.
-          </p>
-          <div className="grid grid-cols-2 gap-1 text-[10px]">
-            {['admin', 'teacher', 'parent', 'student'].map((r) => (
-              <button
-                key={r}
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/auth/demo-token', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ role: r }),
-                    });
-                    const d = await res.json();
-                    if (d.success) {
-                      localStorage.setItem('ga_auth_token', d.token);
-                      localStorage.setItem('ga_user_session', JSON.stringify(d.user));
-                      window.location.reload();
-                    }
-                  } catch (e) {
-                    console.error(e);
-                  }
-                }}
-                className={`py-1 px-2 rounded-md font-medium text-center transition-colors capitalize ${
-                  session.role === r
-                    ? 'bg-indigo-600 text-white font-bold'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
-        {/* Sidebar Base User Profile Card */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/80">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-xs border border-white/20">
-                {session.name
-                  ? session.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .slice(0, 2)
-                      .join('')
-                  : 'GA'}
-              </div>
-              <div className="overflow-hidden">
-                <div className="text-xs font-semibold text-white truncate max-w-[120px]">{session.name}</div>
-                <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{session.email}</div>
-              </div>
+        <div className="border-t border-white/10 bg-black/10 p-3">
+          <div className={`mb-3 flex items-center gap-2.5 ${isSidebarCollapsed ? 'lg:justify-center' : ''}`}>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-blue-500 text-[10px] font-bold text-white ring-2 ring-white/10">
+              {session.name
+                ? session.name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase()
+                : 'GA'}
             </div>
-
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shrink-0 ${roleInfo.bg}`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${roleInfo.dot}`} />
-              {roleInfo.label}
-            </span>
+            <div className={`min-w-0 ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>
+              <p className="truncate text-[11px] font-semibold text-white">{session.name}</p>
+              <p className="truncate text-[9px] capitalize text-slate-400">{roleLabel}</p>
+            </div>
           </div>
-
           <button
             id="sidebar-signout-button"
+            type="button"
             onClick={onLogout}
-            className="w-full py-2 px-3 bg-slate-800 hover:bg-rose-950/40 hover:text-rose-300 text-slate-300 border border-slate-700 hover:border-rose-800/60 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer"
+            title={isSidebarCollapsed ? 'Sign out' : undefined}
+            className={`flex w-full items-center gap-2 rounded-lg border border-white/10 px-2.5 py-2 text-[10px] font-semibold text-slate-300 transition hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-rose-200 ${isSidebarCollapsed ? 'lg:justify-center' : ''}`}
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out Session</span>
+            <LogOut className="h-3.5 w-3.5 shrink-0" />
+            <span className={isSidebarCollapsed ? 'lg:hidden' : ''}>Sign out</span>
           </button>
         </div>
       </aside>
 
-      {/* Mobile Drawer Backdrop Overlay */}
       {isMobileMenuOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Close navigation menu"
           onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-xs lg:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/50 backdrop-blur-[1px] lg:hidden"
         />
       )}
 
-      {/* ========================================================================= */}
-      {/* 2. CONTENT SHELL OVERVIEW & HEADER                                        */}
-      {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header Bar with Breadcrumb Navigation */}
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-20 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
-          {/* Breadcrumb Path & Mobile Toggle */}
-          <div className="flex items-center gap-3">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="sticky top-0 z-20 flex h-[60px] shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur-md sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 border border-slate-200"
-              aria-label="Open mobile navigation menu"
+              type="button"
+              onClick={() => {
+                if (window.innerWidth >= 1024) {
+                  setIsSidebarCollapsed((collapsed) => !collapsed);
+                } else {
+                  setIsMobileMenuOpen(true);
+                }
+              }}
+              className="rounded-lg p-2 text-slate-700 transition hover:bg-slate-100"
+              aria-label="Toggle navigation"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="h-5 w-5" />
             </button>
-
-            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs">
-              <span className="font-semibold text-slate-500 hidden sm:inline">Greenfield Academy</span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400 hidden sm:inline" />
-              <span className="font-medium text-slate-600 capitalize">{session.role} Portal</span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-              <span className="font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100">
-                {currentNav.label}
-              </span>
-            </nav>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold tracking-tight text-slate-900 sm:text-base">
+                {session.school_name || 'Greenfield Academy'}
+              </p>
+              <p className="hidden text-[10px] text-slate-500 sm:block">School management platform</p>
+            </div>
           </div>
-
-          {/* Quick Actions & Search Bar */}
-          <div className="flex items-center gap-3">
-            <div className="relative hidden md:block">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search students, classes, records..."
-                className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-56 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onOpenLoginModal}
-                className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <User className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Switch User</span>
-              </button>
-
-              <div className="relative">
-                <button className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 relative">
-                  <Bell className="w-4 h-4" />
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full absolute top-1.5 right-1.5 ring-2 ring-white" />
-                </button>
-              </div>
-            </div>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            <button type="button" aria-label="Notifications" className="relative rounded-lg p-2 text-slate-700 transition hover:bg-slate-100">
+              <Bell className="h-5 w-5" />
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenLoginModal}
+              className="flex items-center gap-2 rounded-lg p-1.5 text-left transition hover:bg-slate-100"
+              aria-label={`Switch user, signed in as ${session.name}`}
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                {session.name
+                  ? session.name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase()
+                  : 'GA'}
+              </span>
+              <span className="hidden min-w-0 sm:block">
+                <span className="block max-w-36 truncate text-[11px] font-semibold text-slate-900">{session.name}</span>
+                <span className="block text-[10px] text-slate-500">{roleLabel}</span>
+              </span>
+              <ChevronDown className="hidden h-3.5 w-3.5 text-slate-500 sm:block" />
+            </button>
           </div>
         </header>
 
-        {/* Dynamic Main Content Workspace */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50">
-          <div className="max-w-7xl mx-auto space-y-6">{children}</div>
+        <main className="flex-1 overflow-y-auto bg-[#f3f6ff] p-3 sm:p-4 lg:p-5">
+          <div className="mx-auto max-w-[1600px]">{children}</div>
         </main>
       </div>
     </div>

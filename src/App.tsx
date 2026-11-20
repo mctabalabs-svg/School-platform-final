@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from './components/DashboardLayout';
 import { LoginModal, UserSession } from './components/LoginModal';
-import { WelcomeCard } from './components/WelcomeCard';
-import { InfoGrid } from './components/InfoGrid';
-import { EnrollmentTrendsSection } from './components/EnrollmentTrendsSection';
+import { DashboardOverview } from './components/DashboardOverview';
 import { StudentsView } from './components/StudentsView';
 import { StudentModal } from './components/StudentModal';
 import { AddStudentModal } from './components/AddStudentModal';
@@ -17,6 +15,8 @@ import { AuditsView } from './components/AuditsView';
 import { ParentStudentLinkingView } from './components/ParentStudentLinkingView';
 import { ParentDashboardView } from './components/ParentDashboardView';
 import { StudentAssignmentsView } from './components/StudentAssignmentsView';
+import { PlatformAdminView } from './components/PlatformAdminView';
+import { SchoolWorkspaceView } from './components/SchoolWorkspaceView';
 
 import {
   initialAdminProfile,
@@ -34,26 +34,56 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('overview');
 
   // Multi-Role Authenticated Session State (Day 2 JWT Integration)
-  const [session, setSession] = useState<UserSession>(() => {
-    const saved = localStorage.getItem('ga_user_session');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback
-      }
-    }
-    return {
-      id: 'usr-admin-01',
-      school_id: 'SCH-KEN-2026-001',
-      email: 'admin@greenfield.edu',
-      name: 'Arthur Pendelton',
-      role: 'admin',
-      profile_id: 'usr-admin-01',
-    };
-  });
+  const [session, setSession] = useState<UserSession | null>(null);
+  const [isSessionLoading, setIsSessionLoading] = useState(true);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const verifySession = async () => {
+      const token = localStorage.getItem('ga_auth_token');
+      if (!token) {
+        localStorage.removeItem('ga_user_session');
+        if (active) setIsSessionLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error('Your session has expired. Please sign in again.');
+        const data = await response.json();
+        const user = data.user;
+        const restoredSession: UserSession = {
+          id: user.id,
+          school_id: user.school_id,
+          school_name: user.school_name,
+          email: user.email,
+          name: user.name || `${user.first_name} ${user.last_name}`,
+          role: user.role,
+          profile_id: user.profile_id ?? null,
+          token,
+          profile: user.profile,
+        };
+        if (active) {
+          localStorage.setItem('ga_user_session', JSON.stringify(restoredSession));
+          setSession(restoredSession);
+        }
+      } catch {
+        localStorage.removeItem('ga_auth_token');
+        localStorage.removeItem('ga_user_session');
+      } finally {
+        if (active) setIsSessionLoading(false);
+      }
+    };
+
+    void verifySession();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Modal States
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
@@ -73,6 +103,7 @@ export default function App() {
 
   // Adjust default tab when session role changes
   useEffect(() => {
+    if (!session) return;
     if (session.role === 'teacher') {
       setActiveTab('classes');
     } else if (session.role === 'parent') {
@@ -82,25 +113,41 @@ export default function App() {
     } else {
       setActiveTab('overview');
     }
-  }, [session.role]);
+  }, [session?.role]);
+
+  useEffect(() => {
+    if (!session?.token) return;
+
+    const verifyInterval = window.setInterval(async () => {
+      try {
+        const response = await fetch('/api/auth/profile', {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('ga_auth_token');
+          localStorage.removeItem('ga_user_session');
+          setSession(null);
+        } else if (!response.ok) {
+          console.error('Unable to verify the current session:', response.status);
+        }
+      } catch (error) {
+        console.error('Session verification request failed:', error);
+      }
+    }, 5 * 60 * 1000);
+
+    return () => window.clearInterval(verifyInterval);
+  }, [session?.token]);
 
   const handleLogout = () => {
     localStorage.removeItem('ga_auth_token');
     localStorage.removeItem('ga_user_session');
-    const guestAdmin: UserSession = {
-      id: 'usr-admin-01',
-      school_id: 'SCH-KEN-2026-001',
-      email: 'admin@greenfield.edu',
-      name: 'Arthur Pendelton (Admin)',
-      role: 'admin',
-      profile_id: 'usr-admin-01',
-    };
-    setSession(guestAdmin);
-    showToast('Session tokens cleared. Logged out successfully.');
+    setSession(null);
+    setIsLoginModalOpen(false);
   };
 
   const handleLoginSuccess = (newSession: UserSession) => {
     setSession(newSession);
+    setIsSessionLoading(false);
     showToast(`Welcome back, ${newSession.name} (${newSession.role.toUpperCase()})!`);
   };
 
@@ -128,6 +175,33 @@ export default function App() {
     showToast(`Removed student record (${target?.firstName || 'Student'}).`);
   };
 
+  if (isSessionLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-sm text-slate-300">
+        Verifying your session…
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <LoginModal
+        isOpen
+        canClose={false}
+        onClose={() => undefined}
+        onLoginSuccess={handleLoginSuccess}
+      />
+    );
+  }
+
+  if (session.role === 'platform_admin') {
+    return <PlatformAdminView session={session} onLogout={handleLogout} />;
+  }
+
+  if (session.school_id !== 'SCH-KEN-2026-001') {
+    return <SchoolWorkspaceView session={session} onLogout={handleLogout} />;
+  }
+
   return (
     <DashboardLayout
       session={session}
@@ -138,37 +212,18 @@ export default function App() {
     >
       {/* 1. District / School Overview View */}
       {activeTab === 'overview' && (
-        <div className="space-y-6">
-          <WelcomeCard
-            profile={{
-              ...initialAdminProfile,
-              name: session.name,
-              role: session.role === 'admin' ? 'District Administrator' : session.role,
-              email: session.email,
-            }}
-            onAddStudentClick={() => {
+        <DashboardOverview
+          name={session.name}
+          school={session.school_name || initialAdminProfile.school}
+          students={students}
+          teachers={teachers}
+          classes={classes}
+          onAddStudent={() => {
               setEditingStudent(null);
               setIsAddModalOpen(true);
-            }}
-            onExportReportClick={() => {
-              setActiveTab('reports');
-              showToast('Navigated to Academic Reports dossier.');
-            }}
-          />
-
-          <InfoGrid
-            metrics={{
-              students: students.length,
-              classes: classes.length,
-              teachers: teachers.length,
-              attendance: students.length
-                ? students.reduce((total, student) => total + student.attendanceRate, 0) / students.length
-                : 0,
-            }}
-          />
-
-          <EnrollmentTrendsSection />
-        </div>
+          }}
+          onNavigate={(tab) => setActiveTab(tab)}
+        />
       )}
 
       {/* 2. Parent Dashboard View (Day 5 MVP) - Accessible only when session role is 'parent' */}

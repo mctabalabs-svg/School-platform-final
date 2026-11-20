@@ -1,0 +1,23 @@
+[1mdiff --git a/.env.example b/.env.example[m
+[1mindex 5017154..e0457b3 100644[m
+[1m--- a/.env.example[m
+[1m+++ b/.env.example[m
+[36m@@ -1,7 +1,17 @@[m
+ NODE_ENV=development[m
+[31m-JWT_SECRET=replace-with-a-long-random-secret[m
+[32m+[m[32mJWT_SECRET=replace-with-a-random-secret-at-least-32-characters[m
+[32m+[m[32mDATABASE_URL=[m
+[32m+[m[32mDATABASE_POOL_MAX=10[m
+[32m+[m[32mPLATFORM_ADMIN_EMAIL=admin@example.com[m
+[32m+[m[32mPLATFORM_ADMIN_PASSWORD=replace-with-a-unique-password-at-least-16-characters[m
+[32m+[m[32mPLATFORM_ADMIN_FIRST_NAME=Platform[m
+[32m+[m[32mPLATFORM_ADMIN_LAST_NAME=Administrator[m
+ APP_URL=http://localhost:3000[m
+ PORT=3000[m
+[32m+[m[32mAPP_PORT=3000[m
+[32m+[m[32mPOSTGRES_DB=school_platform[m
+[32m+[m[32mPOSTGRES_USER=school_platform[m
+[32m+[m[32mPOSTGRES_PASSWORD=replace_with_a_long_url_safe_random_password[m
+ HMR_PORT=24678[m
+ MPESA_ENVIRONMENT=sandbox[m
+ MPESA_CONSUMER_KEY=[m

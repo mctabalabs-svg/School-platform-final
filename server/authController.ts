@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import { randomBytes } from 'node:crypto';
 import { pglite } from './db';
-import { JWT_SECRET, AuthenticatedUser } from './authMiddleware';
+import { AuthenticatedUser, generateToken } from './authMiddleware';
+
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomBytes(32).toString('hex'), 10);
 
 /**
  * Audit log helper that writes an immutable access record to the audit_logs table.
@@ -57,16 +59,89 @@ export async function logAuditEntry(
 export async function loginController(req: Request, res: Response) {
   const { email, password } = req.body;
 
-  // 1. Validate input completeness
-  if (!email || !password) {
+  if (
+    typeof email !== 'string' ||
+    typeof password !== 'string' ||
+    !email.trim() ||
+    !password ||
+    email.length > 255 ||
+    Buffer.byteLength(password, 'utf8') > 72
+  ) {
     return res.status(400).json({
-      error: 'Missing required credentials. Both "email" and "password" are required.',
+      error: 'Enter a valid email address and password.',
     });
   }
 
-  const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedEmail = email.trim().toLowerCase();
 
   try {
+    const platformAdminRes = await pglite.query<any>(
+      `SELECT id, email, password_hash, first_name, last_name
+       FROM platform_admins WHERE LOWER(email) = $1 LIMIT 1;`,
+      [normalizedEmail]
+    );
+    if (platformAdminRes.rows.length > 0) {
+      const admin = platformAdminRes.rows[0];
+      if (!(await bcrypt.compare(String(password), admin.password_hash))) {
+        return res.status(401).json({ error: 'Invalid authentication credentials.' });
+      }
+
+      const user: AuthenticatedUser = {
+        id: admin.id,
+        school_id: '__platform__',
+        role: 'platform_admin',
+        profile_id: admin.id,
+        name: `${admin.first_name} ${admin.last_name}`,
+        email: admin.email,
+      };
+      return res.status(200).json({
+        success: true,
+        message: 'Platform administrator authentication successful.',
+        token: generateToken(user),
+        user,
+      });
+    }
+
+    const schoolAdminRes = await pglite.query<any>(
+      `SELECT a.id, a.school_id, a.email, a.password_hash, a.first_name, a.last_name, a.status,
+              s.name AS school_name, s.status AS school_status
+       FROM platform_school_admins a
+       JOIN schools s ON s.id = a.school_id
+       WHERE LOWER(a.email) = $1 LIMIT 1;`,
+      [normalizedEmail]
+    );
+    if (schoolAdminRes.rows.length > 0) {
+      const admin = schoolAdminRes.rows[0];
+      if (!(await bcrypt.compare(String(password), admin.password_hash))) {
+        return res.status(401).json({ error: 'Invalid authentication credentials.' });
+      }
+      if (admin.status !== 'active' || admin.school_status !== 'active') {
+        return res.status(403).json({
+          error: 'This school workspace is not active. Contact your platform administrator.',
+        });
+      }
+
+      const schoolAdmin: AuthenticatedUser = {
+        id: admin.id,
+        school_id: admin.school_id,
+        role: 'admin',
+        profile_id: admin.id,
+        name: `${admin.first_name} ${admin.last_name}`,
+        email: admin.email,
+        school_name: admin.school_name,
+      };
+      return res.status(200).json({
+        success: true,
+        message: 'School administrator authentication successful.',
+        token: generateToken(schoolAdmin),
+        user: {
+          ...schoolAdmin,
+          first_name: admin.first_name,
+          last_name: admin.last_name,
+        },
+      });
+    }
+
     // 2. Query unified users table
     const userRes = await pglite.query<any>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, status
@@ -77,25 +152,22 @@ export async function loginController(req: Request, res: Response) {
     );
 
     if (userRes.rows.length === 0) {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       return res.status(401).json({
-        error: 'Invalid authentication credentials. User does not exist.',
+        error: 'Invalid authentication credentials.',
       });
     }
 
     const user = userRes.rows[0];
 
-    // 3. Verify user status
-    if (user.status !== 'active') {
-      return res.status(403).json({
-        error: `Account is currently ${user.status}. Please contact the school administrator.`,
-      });
-    }
-
-    // 4. Secure bcrypt password verification
     const isPasswordValid = await bcrypt.compare(String(password), user.password_hash);
     if (!isPasswordValid) {
-      return res.status(401).json({
-        error: 'Invalid authentication credentials. Incorrect password.',
+      return res.status(401).json({ error: 'Invalid authentication credentials.' });
+    }
+
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        error: 'This account is not active. Contact your school administrator.',
       });
     }
 
@@ -154,32 +226,28 @@ export async function loginController(req: Request, res: Response) {
       email: user.email,
     };
 
-    const token = jwt.sign(tokenPayload, JWT_SECRET, {
-      expiresIn: '7d',
-      algorithm: 'HS256',
-    });
+    const token = generateToken(tokenPayload);
 
     // 7. Atomic Database Transaction: Audit Log Entry
     // PGlite supports full SQL transaction semantics
-    await pglite.query('BEGIN;');
     try {
-      await logAuditEntry(pglite, {
-        action: 'USER_LOGIN_SUCCESS',
-        entity: 'AUTH',
-        actor: `${user.first_name} ${user.last_name} (${user.email})`,
-        details: {
-          user_id: user.id,
-          role: user.role,
-          school_id: user.school_id,
-          profile_id: profileId,
-          ip_address: req.ip || req.socket.remoteAddress,
-          user_agent: req.headers['user-agent'] || 'Unknown Client',
-          timestamp: new Date().toISOString(),
-        },
-      });
-      await pglite.query('COMMIT;');
+      await pglite.transaction((tx) =>
+        logAuditEntry(tx, {
+          action: 'USER_LOGIN_SUCCESS',
+          entity: 'AUTH',
+          actor: `${user.first_name} ${user.last_name} (${user.email})`,
+          details: {
+            user_id: user.id,
+            role: user.role,
+            school_id: user.school_id,
+            profile_id: profileId,
+            ip_address: req.ip || req.socket.remoteAddress,
+            user_agent: req.headers['user-agent'] || 'Unknown Client',
+            timestamp: new Date().toISOString(),
+          },
+        })
+      );
     } catch (txError) {
-      await pglite.query('ROLLBACK;');
       console.error('Audit log transaction error during login:', txError);
       // Proceed with login even if non-critical audit log had issue, but report
     }
@@ -205,7 +273,6 @@ export async function loginController(req: Request, res: Response) {
     console.error('Login controller execution error:', error);
     return res.status(500).json({
       error: 'Internal server error during authentication processing.',
-      details: error.message,
     });
   }
 }
@@ -219,6 +286,28 @@ export async function getProfileController(req: Request & { user?: Authenticated
   }
 
   try {
+    if (req.user.role === 'platform_admin') {
+      const adminRes = await pglite.query<any>(
+        `SELECT id, email, first_name, last_name
+         FROM platform_admins WHERE id = $1 LIMIT 1;`,
+        [req.user.id]
+      );
+      const admin = adminRes.rows[0];
+      if (!admin) {
+        return res.status(401).json({ error: 'The account for this session is no longer available.' });
+      }
+      return res.json({
+        success: true,
+        user: {
+          ...admin,
+          school_id: '__platform__',
+          role: 'platform_admin',
+          profile_id: admin.id,
+          name: `${admin.first_name} ${admin.last_name}`,
+        },
+      });
+    }
+
     const userRes = await pglite.query<any>(
       `SELECT id, school_id, email, first_name, last_name, role, status, created_at
        FROM users WHERE id = $1 LIMIT 1;`,
@@ -226,10 +315,13 @@ export async function getProfileController(req: Request & { user?: Authenticated
     );
 
     if (userRes.rows.length === 0) {
-      return res.status(404).json({ error: 'User profile not found.' });
+      return res.status(401).json({ error: 'The account for this session is no longer available.' });
     }
 
     const user = userRes.rows[0];
+    if (user.status !== 'active') {
+      return res.status(403).json({ error: 'This account is not active.' });
+    }
     let profileData: any = null;
 
     if (user.role === 'teacher' && req.user.profile_id) {
@@ -260,9 +352,11 @@ export async function getProfileController(req: Request & { user?: Authenticated
         ...user,
         profile_id: req.user.profile_id,
         profile: profileData,
+        school_name: req.user.school_name,
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    console.error('Profile lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to verify the current session.' });
   }
 }
